@@ -1,5 +1,7 @@
 # OmniFocus Extension
 
+![icon](./icons/icon.png)
+
 A browser extension for Chrome-based browsers that adds a button to save the current tab to your OmniFocus inbox.
 
 While there is another extension that does this: https://github.com/gligoran/save-to-omnifocus
