@@ -1,26 +1,23 @@
 document.addEventListener("DOMContentLoaded", function () {
-  const saveButton = document.getElementById("saveToOmniFocus");
-  const statusDiv = document.getElementById("status");
+  var saveButton = document.getElementById("saveToOmniFocus");
+  var saveButtonNoSummary = document.getElementById("saveToOmniFocusNoSummary");
+  var statusDiv = document.getElementById("status");
+
+  saveButtonNoSummary.addEventListener("click", function () {
+    chrome.runtime.sendMessage(
+      { action: "addToOmnifocusPopupNoSummary" },
+      function (response) {
+        console.log(`popup.js||addToOmnifocusPopupNoSummary`, response);
+      }
+    );
+  });
 
   saveButton.addEventListener("click", function () {
     // Instead of handling the logic here, send a message to the background script
     chrome.runtime.sendMessage(
-      { action: "addToOmnifocusPopup" },
+      { action: "addToOmnifocusPopupSummary" },
       function (response) {
-        if (response && response.success) {
-          statusDiv.textContent = "Added to OmniFocus!";
-
-          setTimeout(() => {
-            statusDiv.textContent = "";
-            window.close();
-          }, 2000);
-        } else {
-          const errorMsg =
-            response && response.error
-              ? response.error
-              : "Failed to add to OmniFocus";
-          statusDiv.textContent = errorMsg;
-        }
+        console.log(`popup.js||addToOmnifocusPopupSummary`, response);
       }
     );
   });

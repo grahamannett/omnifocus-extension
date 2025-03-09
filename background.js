@@ -11,11 +11,23 @@ const extOpts = {
   minLength: 50,
 };
 
-const log = {
-  info: console.log.bind(console, "%c[INFO]", "color: #00ff00"),
-  warn: console.log.bind(console, "%c[WARN]", "color: #ffcc00"),
-  error: console.log.bind(console, "%c[ERROR]", "color: #ff0000"),
-};
+// Minimal logger
+const log = (() => {
+  const fmt =
+    (level, color) =>
+    (...args) =>
+      console[level === "debug" ? "log" : level](
+        `%c[${new Date().toTimeString().slice(0, 8)}][${level.toUpperCase()}]`,
+        `color:${color}`,
+        ...args
+      );
+  return {
+    debug: extOpts.debug ? fmt("debug", "#888") : () => {},
+    info: fmt("info", "#0c5"),
+    warn: fmt("warn", "#f90"),
+    error: fmt("error", "#f43"),
+  };
+})();
 
 /**
  * Wraps a promise with a timeout
@@ -151,6 +163,7 @@ chrome.action.setPopup({ popup: "" }); // Default to no popup (direct add)
 const messageHandlers = {
   // Handle Command key pressed
   modifierKeyPressed: (message, sender, sendResponse) => {
+    console.debug("modifierKeyPressed - success");
     if (message.commandKey) {
       chrome.action.setPopup({ popup: "popup.html" });
       sendResponse({ success: true });
@@ -161,6 +174,7 @@ const messageHandlers = {
   // Handle Command key released
   modifierKeyReleased: (message, sender, sendResponse) => {
     chrome.action.setPopup({ popup: "" });
+    console.debug("modifierKeyReleased - success");
     sendResponse({ success: true });
     return false; // Synchronous response
   },
@@ -171,16 +185,34 @@ const messageHandlers = {
       if (tabs && tabs[0]) {
         addToOmniFocus(tabs[0])
           .then(() => {
+            console.debug("=> addToOmnifocusPopup - success");
             sendResponse({ success: true });
           })
           .catch((error) => {
             sendResponse({ success: false, error: error.message });
           });
       } else {
+        console.debug("addToOmnifocusPopup - no active tab");
         sendResponse({ success: false, error: "No active tab found" });
       }
     });
     return true; // Async response, keep the channel open
+  },
+
+  addToOmnifocusPopupNoSummary: (message, sender, sendResponse) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs && tabs[0]) {
+        addToOmniFocus(tabs[0], { doAI: false });
+      }
+    });
+  },
+
+  addToOmnifocusPopupSummary: (message, sender, sendResponse) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs && tabs[0]) {
+        addToOmniFocus(tabs[0], { doAI: true });
+      }
+    });
   },
 };
 
@@ -211,10 +243,16 @@ chrome.action.onClicked.addListener((tab) => {
 
 // Listen for keyboard shortcuts
 chrome.commands.onCommand.addListener((command) => {
+  // TODO: ideally would open up the popup here, as is, does not seem to work
+  // this only seems to work if the popup has already been opened, then the keyboard shortcut works?
+  // also seems to work if i do the `addToOmnifocusPopup` keyboard shortcut and then the `_execute_action` keyboard shortcut...
+  // chrome.action.setPopup({ popup: "popup.html" });
+  console.debug(`onCommand - ${command} - keyboard shortcut`);
   if (command === "addToOmnifocusPopup") {
-    // TODO: ideally would open up the popup here, as is, does not seem to work
-    // this only seems to work if the popup has already been opened, then the keyboard shortcut works?
-    // also seems to work if i do the `addToOmnifocusPopup` keyboard shortcut and then the `_execute_action` keyboard shortcut...
-    chrome.action.setPopup({ popup: "popup.html" });
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs && tabs[0]) {
+        addToOmniFocus(tabs[0], { doAI: false });
+      }
+    });
   }
 });
