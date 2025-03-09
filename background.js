@@ -12,15 +12,9 @@ const extOpts = {
 };
 
 const log = {
-  info: (message, ...args) => {
-    if (extOpts.debug) console.log(message, ...args);
-  },
-  warn: (message, ...args) => {
-    console.warn(message, ...args);
-  },
-  error: (message, ...args) => {
-    console.error(message, ...args);
-  },
+  info: console.log.bind(console, "%c[INFO]", "color: #00ff00"),
+  warn: console.log.bind(console, "%c[WARN]", "color: #ffcc00"),
+  error: console.log.bind(console, "%c[ERROR]", "color: #ff0000"),
 };
 
 /**
@@ -93,13 +87,8 @@ async function getSummary(longText) {
    of three bullet points, and a short summary is one sentence; a long key-points summary is seven bullet points, and a long summary is a paragraph.
   **/
 
-  if (
-    typeof extOpts.minLength === "number" &&
-    longText.length < extOpts.minLength
-  ) {
-    log.error("Text is too short for meaningful summarization");
-    return "";
-  }
+  // check if text is too short
+  if (longText.length < extOpts.minLength) return "";
 
   const summarizer = await ai.summarizer.create({
     sharedContext: "Generate a single sentence summary of the following text",
@@ -108,8 +97,7 @@ async function getSummary(longText) {
     length: "short", // Options: short, medium, long
   });
 
-  const summary = await summarizer.summarize(longText);
-  return summary;
+  return await summarizer.summarize(longText);
 }
 
 /**
@@ -117,12 +105,11 @@ async function getSummary(longText) {
  * @param {chrome.tabs.Tab} tab - The browser tab to add to OmniFocus
  * @returns {Promise<void>}
  */
-async function addToOmniFocus(tab, { doAI = false } = {}) {
-  if (!tab || !tab.url) {
-    log.error("Invalid tab provided");
-    return;
-  }
+async function addToOmniFocus(tab, { doAI = true } = {}) {
+  if (!tab || !tab.url) throw new Error("Invalid tab provided");
+
   let noteContent = tab.url;
+  log.info(`adding to omnifocus: {AI: ${doAI}}`);
 
   if (doAI && extOpts.summaryEnabled && extOpts.aiReady) {
     try {
@@ -134,50 +121,52 @@ async function addToOmniFocus(tab, { doAI = false } = {}) {
       );
 
       if (summary) noteContent = `${tab.url}\n\n${summary}`;
-    } catch (error) {
-      log.warn(error.message);
+    } catch (err) {
+      log.error(err.message);
     }
   }
 
   try {
-    const itemName = encodeURIComponent(tab.title);
-    const itemNote = encodeURIComponent(noteContent);
-    const omnifocusUrl = `omnifocus:///add?name=${itemName}&note=${itemNote}`;
+    let item = {
+      name: encodeURIComponent(tab.title),
+      note: encodeURIComponent(noteContent),
+    };
+
+    const omnifocusUrl = `omnifocus:///add?name=${item.name}&note=${item.note}`;
 
     chrome.tabs.create({ url: omnifocusUrl, active: false }, (newTab) => {
-      if (!newTab) {
-        log.error("Failed to create OmniFocus tab");
-        return;
-      }
-
-      // Close the newly created tab after a short delay
-      setTimeout(() => {
-        chrome.tabs.remove(newTab.id);
-        log.info("OmniFocus task created and tab closed");
-      }, 500);
+      setTimeout(() => chrome.tabs.remove(newTab.id), 500);
     });
-  } catch (finalError) {
-    log.error("Failed to create OmniFocus task:", finalError);
+  } catch (error) {
+    log.error("Failed to create OmniFocus task:", error);
   }
 }
 
+// This was here originally, but its not clear to me if I should have this
 // Set up a dynamic popup URL based on Command key (empty = no popup)
 chrome.action.setPopup({ popup: "" }); // Default to no popup (direct add)
+// chrome.action.setPopup({ popup: "popup.html" });
 
-// Create a listener for key presses
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (
-    message.action === "modifierKeyPressedOmniExtension" &&
-    message.commandKey
-  ) {
-    // If Command key is pressed, show the popup
-    chrome.action.setPopup({ popup: "popup.html" });
-    sendResponse({ success: true });
-  } else if (message.action === "modifierKeyReleasedOmniExtension") {
+// Message action handlers
+const messageHandlers = {
+  // Handle Command key pressed
+  modifierKeyPressed: (message, sender, sendResponse) => {
+    if (message.commandKey) {
+      chrome.action.setPopup({ popup: "popup.html" });
+      sendResponse({ success: true });
+    }
+    return false; // Synchronous response
+  },
+
+  // Handle Command key released
+  modifierKeyReleased: (message, sender, sendResponse) => {
     chrome.action.setPopup({ popup: "" });
     sendResponse({ success: true });
-  } else if (message.action === "addToOmniFocus") {
-    // Handle add requests from the popup
+    return false; // Synchronous response
+  },
+
+  // Handle add to OmniFocus request from popup
+  addToOmnifocusPopup: (message, sender, sendResponse) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs && tabs[0]) {
         addToOmniFocus(tabs[0])
@@ -191,7 +180,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: false, error: "No active tab found" });
       }
     });
-    return true; // Required for async sendResponse
+    return true; // Async response, keep the channel open
+  },
+};
+
+// Main message listener with dispatch pattern
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  const { action } = message;
+
+  // Check if we have a handler for this action
+  if (action && messageHandlers[action]) {
+    // Call the appropriate handler and get whether we need async response
+    const needsAsyncResponse = messageHandlers[action](
+      message,
+      sender,
+      sendResponse
+    );
+    return needsAsyncResponse; // Return true to keep the message channel open if needed
+  } else {
+    log.warn("Unknown message action:", action);
   }
 });
 
@@ -199,22 +206,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.action.onClicked.addListener((tab) => {
   addToOmniFocus(tab)
     .then(() => {})
-    .catch((error) => {
-      log.error("onClicked:", error);
-    });
+    .catch((err) => {});
 });
 
 // Listen for keyboard shortcuts
 chrome.commands.onCommand.addListener((command) => {
-  if (command === "add_to_omnifocus") {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs && tabs[0]) {
-        addToOmniFocus(tabs[0])
-          .then(() => {})
-          .catch((err) => {
-            log.error("onCommand:", err);
-          });
-      }
-    });
+  if (command === "addToOmnifocusPopup") {
+    // TODO: ideally would open up the popup here, as is, does not seem to work
+    // this only seems to work if the popup has already been opened, then the keyboard shortcut works?
+    // also seems to work if i do the `addToOmnifocusPopup` keyboard shortcut and then the `_execute_action` keyboard shortcut...
+    chrome.action.setPopup({ popup: "popup.html" });
   }
 });

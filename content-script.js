@@ -4,18 +4,18 @@
 // This content script monitors Command key presses to enable/disable popup
 
 // Listen for Command key presses
-document.addEventListener("keydown", function (event) {
+document.addEventListener("keydown", (event) => {
   if (event.metaKey || event.ctrlKey) {
     chrome.runtime.sendMessage({
-      action: "modifierKeyPressedOmniExtension",
+      action: "modifierKeyPressed",
       commandKey: true,
     });
   }
 });
 
 // Listen for Command key releases
-document.addEventListener("keyup", function (event) {
+document.addEventListener("keyup", (event) => {
   if (event.key === "Meta" || event.key === "Control") {
-    chrome.runtime.sendMessage({ action: "modifierKeyReleasedOmniExtension" });
+    chrome.runtime.sendMessage({ action: "modifierKeyReleased" });
   }
 });

@@ -8,12 +8,12 @@
         "scripting",
         "tabs"
     ],
+    "optional_permissions": [],
     "host_permissions": [
         "<all_urls>"
     ],
     "background": {
-        "service_worker": "background.js",
-        "type": "module"
+        "service_worker": "background.js"
     },
     "content_scripts": [
         {
@@ -40,12 +40,19 @@
         "128": "icons/icon128.png"
     },
     "commands": {
-        "add_to_omnifocus": {
+        "addToOmnifocusPopup": {
             "suggested_key": {
                 "default": "Alt+Shift+O",
                 "mac": "Alt+Shift+O"
             },
-            "description": "Add current tab to OmniFocus without opening popup"
+            "description": "Open the OmniFocus Tab Saver popup"
+        },
+        "_execute_action": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+O",
+                "mac": "Ctrl+Shift+O"
+            },
+            "description": "Open the OmniFocus Tab Saver popup"
         }
     }
 }
