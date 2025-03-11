@@ -186,6 +186,9 @@ const handlers = {
       });
     });
   },
+  openPopup: () => {
+    chrome.action.setPopup({ popup: "popup.html" });
+  },
 };
 
 // Main message listener with dispatch pattern
@@ -197,6 +200,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     handlers[action]()
       .then(() => {
         sendResponse({ success: true });
+        chrome.action.setPopup({ popup: "" });
       })
       .catch((error) => {
         log.error("Failed to add to OmniFocus:", error);
@@ -212,7 +216,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Handle direct clicks (when popup is not shown)
 chrome.action.onClicked.addListener((tab) => {
-  chrome.action.setPopup({ popup: "popup.html" });
+  handlers.openPopup();
 });
 
 // Listen for keyboard shortcuts

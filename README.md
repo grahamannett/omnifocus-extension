@@ -12,10 +12,10 @@ That extension is not the latest manifest version and also leaves a new tab open
 Some of these features are currently still experimental and may require additional setup in chrome,
 
 - [chrome://flags/#text-safety-classifier](chrome://flags/#text-safety-classifier) - disable this as otherwise everything is blocked
+- [Optimization Guide On Device Model](chrome://flags/#optimization-guide-on-device-model) - Enable this
 - Enable the following flags:
   - [Prompt API for Gemini Nano](chrome://flags/#prompt-api-for-gemini-nano)
   - [Summarization API](chrome://flags/#summarization-api-for-gemini-nano)
-  - [Optimization Guide On Device Model](chrome://flags/#optimization-guide-on-device-model)
 
 ## Features
 
@@ -58,3 +58,6 @@ This extension supports Chrome's AI features to generate a one-line summary of w
 ## Related Docs
 
 - https://inside.omnifocus.com/url-schemes
+- Browser API's:
+  - https://github.com/webmachinelearning/writing-assistance-apis
+  - https://github.com/webmachinelearning/prompt-api/tree/main
