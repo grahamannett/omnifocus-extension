@@ -42,9 +42,9 @@
             font-weight: normal;
             font-size: 12px;
             height: 30px;
-            padding: 0 12px;
+            /* padding: 0 12px; */
             width: 100%;
-            margin-bottom: 10px;
+            /* margin-bottom: 10px; */
             background-color: var(--button-face);
             color: var(--text-color);
             border: 2px solid;
@@ -78,6 +78,7 @@
             margin-top: 10px;
             font-size: 14px;
             color: #333;
+            min-height: 20px;
         }
 
         .summary-result {
@@ -91,6 +92,7 @@
             background-color: #f9f9f9;
         }
     </style>
+
 </head>
 
 <body>
@@ -115,9 +117,9 @@
     </div>
 
     <div id="status" class="status"></div>
-    <div id="summaryResult" class="summary-result" style="display:none;"></div>
 
     <script src="popup.js"></script>
+
 </body>
 
 </html>
