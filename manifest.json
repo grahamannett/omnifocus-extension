@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "OmniFocus Tab Saver",
-    "version": "0.0.2",
-    "description": "Adds current tab to OmniFocus with AI summary",
+    "version": "0.0.3",
+    "description": "Adds current tab to OmniFocus with AI summary using Chrome's built-in AI",
     "permissions": [
         "activeTab",
         "scripting",
