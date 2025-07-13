@@ -1,15 +1,11 @@
+// Import the AI service at the top of background scripts
+let chromeAI = null;
+
 const extOpts = {
-  // todo: make the options part of configurable settings in popup
-  aiReady: (() => {
-    if (!ai || !ai.languageModel || !ai.summarizer || !ai.rewriter)
-      return false;
-    return true;
-  })(),
   timeout: 7000,
   summaryEnabled: true,
   debug: true,
   minLength: 50,
-  summaryFn: getPromptSummary,
 };
 
 // Minimal logger
@@ -29,6 +25,26 @@ const log = (() => {
     error: fmt("error", "#f43"),
   };
 })();
+
+/**
+ * Initialize the Chrome AI service
+ */
+async function initializeAIService() {
+  try {
+    // Dynamically import the AI service
+    const { ChromeAIService } = await import('./ai-service.js');
+    chromeAI = new ChromeAIService();
+    await chromeAI.initialize();
+    
+    const availability = await chromeAI.checkAvailability();
+    log.info('AI Service initialized:', availability);
+    
+    return availability.available;
+  } catch (error) {
+    log.error('Failed to initialize AI service:', error);
+    return false;
+  }
+}
 
 /**
  * Wraps a promise with a timeout
@@ -68,58 +84,39 @@ async function getTextContent(tab) {
 }
 
 /**
- * Extracts the full HTML content from a tab
- * @param {chrome.tabs.Tab} tab - The browser tab to extract HTML from
- * @returns {string} The full HTML content of the page
- */
-async function getHtmlContent(tab) {
-  const [htmlResult] = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    function: () => document.documentElement.innerHTML,
-  });
-  return htmlResult.result;
-}
-
-/**
- * Generates a summary of provided text using Chrome's AI API
- * @param {string} longText - The text to summarize
+ * Generates a summary using the Chrome AI service
+ * @param {string} text - The text to summarize
+ * @param {Object} options - Summary options
  * @returns {Promise<string>} A summary of the text
- * @throws {Error} If AI summarization fails
  */
-async function getSummarizerSummary(longText) {
-  /**
-   from some testing, it seems that the prompt is better than the summarizer
-   --
-   sharedContext: Additional shared context that can help the summarizer.
-   type: The type of the summarization, with the allowed values key-points (default), tl;dr, teaser, and headline.
-   format: The format of the summarization, with the allowed values markdown (default), and plain-text.
-   length: The length of the summarization, with the allowed values short, medium (default), and long. The meanings of these
-   lengths vary depending on the type requested. For example, in Chrome's implementation, a short key-points summary consists
-   of three bullet points, and a short summary is one sentence; a long key-points summary is seven bullet points, and a long summary is a paragraph.
-  **/
+async function generateSummary(text, options = {}) {
+  if (!chromeAI) {
+    const aiAvailable = await initializeAIService();
+    if (!aiAvailable) {
+      throw new Error('Chrome AI service not available');
+    }
+  }
 
-  // check if text is too short
-  if (longText.length < extOpts.minLength) return "";
+  // Check if text is too short
+  if (text.length < extOpts.minLength) {
+    return "";
+  }
 
-  const summarizer = await ai.summarizer.create({
-    sharedContext: "Generate a single sentence summary of the following text",
-    type: "headline", // Options: headline, key-points, tl;dr, teaser
-    format: "markdown", // Options: markdown, plain-text
-    length: "short", // Options: short, medium, long
-  });
+  const summaryOptions = {
+    type: 'headline',
+    format: 'plain-text',
+    length: 'short',
+    context: 'This is a summary for a task in OmniFocus',
+    ...options
+  };
 
-  return await summarizer.summarize(longText);
-}
-
-async function getPromptSummary(longText) {
-  const session = await ai.languageModel.create({
-    temperature: 0.7,
-    topK: 40,
-    systemPrompt: "Generate a single sentence summary of the following text.",
-  });
-
-  const prompt = await session.prompt(longText);
-  return prompt;
+  try {
+    const summary = await chromeAI.summarize(text, summaryOptions);
+    return summary;
+  } catch (error) {
+    log.error('Summary generation failed:', error);
+    throw error;
+  }
 }
 
 /**
@@ -131,19 +128,22 @@ async function addToOmniFocus(tab, { doAI = true } = {}) {
   if (!tab || !tab.url) throw new Error("Invalid tab provided");
 
   let noteContent = tab.url;
-  log.info(`adding to of:{AI:${doAI},Fn:${extOpts.summaryFn.name}}`);
+  log.info(`Adding to OmniFocus: {AI:${doAI}}`);
 
-  if (doAI && extOpts.summaryEnabled && extOpts.aiReady) {
+  if (doAI && extOpts.summaryEnabled) {
     try {
       const pageText = await getTextContent(tab);
       const summary = await withTimeout(
-        extOpts.summaryFn(pageText),
+        generateSummary(pageText),
         extOpts.timeout,
         `Summary for ${tab.url}`
       );
-      if (summary) noteContent = `${tab.url}\n\n${summary}`;
+      if (summary) {
+        noteContent = `${tab.url}\n\n${summary}`;
+      }
     } catch (err) {
-      log.error(`Timeout`, err);
+      log.error(`Summary generation failed:`, err);
+      // Continue with just the URL if summary fails
     }
   }
 
@@ -189,6 +189,15 @@ const handlers = {
   openPopup: () => {
     chrome.action.setPopup({ popup: "popup.html" });
   },
+  checkAIAvailability: async () => {
+    if (!chromeAI) {
+      await initializeAIService();
+    }
+    if (chromeAI) {
+      return await chromeAI.checkAvailability();
+    }
+    return { available: false, status: 'unavailable', version: null };
+  }
 };
 
 // Main message listener with dispatch pattern
@@ -196,6 +205,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { action } = message;
 
   if (handlers[action]) {
+    // Handle async actions
+    if (action === 'checkAIAvailability') {
+      handlers[action]()
+        .then(result => sendResponse({ success: true, data: result }))
+        .catch(error => sendResponse({ success: false, error: error.message }));
+      return true; // Keep message channel open for async response
+    }
+    
     // Keep the message channel open for the async response
     handlers[action]()
       .then(() => {
@@ -224,4 +241,10 @@ chrome.commands.onCommand.addListener((command) => {
   if (handlers[command]) {
     handlers[command]();
   }
+});
+
+// Initialize AI service when the extension starts
+chrome.runtime.onInstalled.addListener(async () => {
+  log.info('Extension installed/updated');
+  await initializeAIService();
 });

@@ -4,27 +4,50 @@
 
 A browser extension for Chrome-based browsers that adds a button to save the current tab to your OmniFocus inbox. When Chrome AI is available, it automatically includes a one-line summary of the page content.
 
-While there is another extension that does this: https://github.com/gligoran/save-to-omnifocus
-That extension is not the latest manifest version and also leaves a new tab open when the button is clicked.
+## 🎉 New in Version 0.1.0
+
+- **Full support for Chrome 138+ stable AI APIs** - The extension now uses Chrome's built-in Summarizer API
+- **Automatic API detection** - Seamlessly switches between stable and experimental APIs
+- **Improved UI** - Modern design with real-time AI status indicators
+- **Better error handling** - Clear feedback when AI features are unavailable
+
+## Requirements
+
+### Chrome Version
+- **Chrome 138 or later** for the stable AI features
+- **Chrome 127+** for experimental features (requires flags)
+
+### Hardware Requirements (for AI features)
+- **Operating System**: Windows 10/11, macOS 13+, or Linux
+- **Storage**: At least 22 GB free space on Chrome profile volume
+- **GPU**: More than 4 GB VRAM
+- **Network**: Unlimited or unmetered connection
 
 ## Setup
 
-Some of these features are currently still experimental and may require additional setup in chrome,
+### For Chrome 138+ (Recommended)
+The AI features should work out of the box! The extension will automatically detect and use the built-in Summarizer API.
 
-- [chrome://flags/#text-safety-classifier](chrome://flags/#text-safety-classifier) - disable this as otherwise everything is blocked
-- [Optimization Guide On Device Model](chrome://flags/#optimization-guide-on-device-model) - Enable this
-- Enable the following flags:
-  - [Prompt API for Gemini Nano](chrome://flags/#prompt-api-for-gemini-nano)
-  - [Summarization API](chrome://flags/#summarization-api-for-gemini-nano)
+### For Older Chrome Versions (Experimental)
+If you're using an older version of Chrome, you can still access experimental AI features:
+
+1. Navigate to Chrome flags:
+   - `chrome://flags/#text-safety-classifier` - Disable this to prevent blocking
+   - `chrome://flags/#optimization-guide-on-device-model` - Enable this
+   - `chrome://flags/#prompt-api-for-gemini-nano` - Enable this
+   - `chrome://flags/#summarization-api-for-gemini-nano` - Enable this
+
+2. Restart Chrome after enabling the flags
 
 ## Features
 
-- Adds the current tab's title and URL to your OmniFocus inbox with one click
-- Supports both direct adding and popup interface
-- Automatically includes AI-generated summary when Chrome AI is available
-- Command/Ctrl+click to show the popup interface
-- Keyboard shortcuts for quick task addition
-- Cleanly handles OmniFocus URL scheme (no leftover tabs)
+- ✅ Adds the current tab's title and URL to your OmniFocus inbox with one click
+- ✅ Supports both direct adding and popup interface
+- ✅ Automatically includes AI-generated summary when Chrome AI is available
+- ✅ Command/Ctrl+click to show the popup interface
+- ✅ Keyboard shortcuts for quick task addition
+- ✅ Cleanly handles OmniFocus URL scheme (no leftover tabs)
+- ✅ Real-time AI availability status
 
 ## Usage
 
@@ -37,27 +60,89 @@ Some of these features are currently still experimental and may require addition
 ### Using The Popup Interface
 
 1. Navigate to a webpage you want to save to OmniFocus
-2. Hold down the Command key (⌘) on Mac or Control key on Windows/Linux
-3. While holding the key, click the OmniFocus Tab Saver extension icon
-4. In the popup that appears, click the "Add to OmniFocus Inbox" button
+2. Click the OmniFocus Tab Saver extension icon
+3. Choose between:
+   - **"Add to OmniFocus with Summary"** - Includes an AI-generated summary
+   - **"Add without Summary"** - Adds just the title and URL
 
 ### Keyboard Shortcuts
 
-- Alt+O (Option+O on Mac): Open the extension popup
-- Alt+Shift+O (Option+Shift+O on Mac): Add the current tab to OmniFocus without opening the popup
+- **Ctrl+Shift+O** (Cmd+Shift+O on Mac): Open the extension popup
+- **Alt+Shift+O** (Option+Shift+O on Mac): Add the current tab to OmniFocus with AI summary
 
 ## AI Summarization
 
-This extension supports Chrome's AI features to generate a one-line summary of web pages:
+This extension leverages Chrome's built-in AI capabilities:
 
-- When Chrome AI is available, the extension automatically generates a summary of the current page
-- The summary is included in the OmniFocus note field along with the URL
-- The popup interface shows whether AI summarization is available
-- If AI is not available, the extension falls back to only including the URL
+### Chrome 138+ (Stable API)
+- Uses the official Summarizer API
+- Supports different summary types (headline, key-points, tldr, teaser)
+- Shows download progress if the AI model needs to be downloaded
+- Provides clear status indicators
 
-## Related Docs
+### Older Versions (Experimental)
+- Falls back to experimental `window.ai` APIs
+- Uses either the summarizer or language model APIs
+- Requires enabling Chrome flags
 
-- https://inside.omnifocus.com/url-schemes
-- Browser API's:
-  - https://github.com/webmachinelearning/writing-assistance-apis
-  - https://github.com/webmachinelearning/prompt-api/tree/main
+## Architecture
+
+The extension uses a modern abstraction layer (`ai-service.js`) that:
+- Automatically detects available AI APIs
+- Provides a unified interface for both stable and experimental APIs
+- Handles model downloads and initialization
+- Gracefully degrades when AI is unavailable
+
+## Development
+
+### Project Structure
+```
+omnifocus-extension/
+├── manifest.json        # Extension configuration
+├── background.js        # Background service worker
+├── ai-service.js       # AI abstraction layer
+├── popup.html          # Popup UI
+├── popup.js            # Popup functionality
+├── content-script.js   # Content script (currently unused)
+├── icons/              # Extension icons
+└── README.md          # This file
+```
+
+### Building from Source
+1. Clone the repository
+2. Open Chrome and navigate to `chrome://extensions/`
+3. Enable "Developer mode"
+4. Click "Load unpacked" and select the extension directory
+
+## Troubleshooting
+
+### AI Features Not Working?
+1. Check Chrome version (138+ recommended)
+2. Verify hardware requirements are met
+3. Check the popup for AI status indicators
+4. For experimental features, ensure flags are enabled
+
+### Model Download Issues
+- The AI model download requires a stable internet connection
+- Download progress is shown in the extension popup
+- The model is approximately 2-3 GB
+
+## Privacy
+
+- All AI processing happens locally on your device
+- No data is sent to external servers for summarization
+- The extension only accesses the current tab when you activate it
+
+## Related Documentation
+
+- [Chrome AI Summarizer API](https://developer.chrome.com/docs/ai/summarizer-api)
+- [OmniFocus URL Schemes](https://inside.omnifocus.com/url-schemes)
+- [Chrome Extension Development](https://developer.chrome.com/docs/extensions/)
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This extension is provided as-is for personal use. Feel free to modify and distribute according to your needs.
