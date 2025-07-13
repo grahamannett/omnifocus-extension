@@ -2,20 +2,19 @@
 
 ![icon](./icons/icon.png)
 
-A browser extension for Chrome-based browsers that adds a button to save the current tab to your OmniFocus inbox. When Chrome AI is available, it automatically includes a one-line summary of the page content.
+A browser extension for Chrome-based browsers that adds a button to save the current tab to your OmniFocus inbox. When Chrome AI is available, it automatically includes a one-line summary of the page content using the **stable Summarizer and Language Model Web APIs** introduced in Chrome 124.
 
 While there is another extension that does this: https://github.com/gligoran/save-to-omnifocus
 That extension is not the latest manifest version and also leaves a new tab open when the button is clicked.
 
 ## Setup
 
-Some of these features are currently still experimental and may require additional setup in chrome,
+The extension works out-of-the-box on recent Chrome (≥ 124) and other Chromium browsers that expose the `navigator.summarizer` and `navigator.languageModel` APIs.
 
-- [chrome://flags/#text-safety-classifier](chrome://flags/#text-safety-classifier) - disable this as otherwise everything is blocked
-- [Optimization Guide On Device Model](chrome://flags/#optimization-guide-on-device-model) - Enable this
-- Enable the following flags:
-  - [Prompt API for Gemini Nano](chrome://flags/#prompt-api-for-gemini-nano)
-  - [Summarization API](chrome://flags/#summarization-api-for-gemini-nano)
+If you are running an older Canary / Dev build you may still need to enable the corresponding origin trial or the following flags:
+
+- `#summarization-api` – Summarizer API
+- `#prompt-api` – Prompt / Language Model API
 
 ## Features
 
@@ -48,12 +47,14 @@ Some of these features are currently still experimental and may require addition
 
 ## AI Summarization
 
-This extension supports Chrome's AI features to generate a one-line summary of web pages:
+This extension uses the W3C Writing Assist APIs that are now available in stable Chrome builds:
 
-- When Chrome AI is available, the extension automatically generates a summary of the current page
-- The summary is included in the OmniFocus note field along with the URL
-- The popup interface shows whether AI summarization is available
-- If AI is not available, the extension falls back to only including the URL
+- `navigator.summarizer` for fast extractive summaries
+- `navigator.languageModel` for prompt-based generation
+
+At runtime we automatically detect whether these APIs (or the legacy `ai.*` namespace used in the original origin trial) are present. If both APIs are available a short headline-style summary is added to the OmniFocus note; otherwise the extension gracefully falls back to saving only the page URL.
+
+No personal data ever leaves your device – summaries are generated **locally** using the on-device small Gemini model shipped with Chrome.
 
 ## Related Docs
 

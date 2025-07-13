@@ -1,9 +1,32 @@
+const aiAdapter = {
+  hasSummarizer: () =>
+    (typeof ai !== "undefined" && ai.summarizer) ||
+    (typeof navigator !== "undefined" && navigator.summarizer),
+  hasLanguageModel: () =>
+    (typeof ai !== "undefined" && ai.languageModel) ||
+    (typeof navigator !== "undefined" && navigator.languageModel),
+  createSummarizer: async (opts) => {
+    if (typeof ai !== "undefined" && ai.summarizer) {
+      return ai.summarizer.create(opts);
+    } else if (typeof navigator !== "undefined" && navigator.summarizer) {
+      return navigator.summarizer.create(opts);
+    }
+    throw new Error("Summarizer API not available");
+  },
+  createLanguageSession: async (opts) => {
+    if (typeof ai !== "undefined" && ai.languageModel) {
+      return ai.languageModel.create(opts);
+    } else if (typeof navigator !== "undefined" && navigator.languageModel) {
+      return navigator.languageModel.create(opts);
+    }
+    throw new Error("LanguageModel API not available");
+  },
+};
+
 const extOpts = {
   // todo: make the options part of configurable settings in popup
   aiReady: (() => {
-    if (!ai || !ai.languageModel || !ai.summarizer || !ai.rewriter)
-      return false;
-    return true;
+    return aiAdapter.hasLanguageModel() && aiAdapter.hasSummarizer();
   })(),
   timeout: 7000,
   summaryEnabled: true,
@@ -101,7 +124,7 @@ async function getSummarizerSummary(longText) {
   // check if text is too short
   if (longText.length < extOpts.minLength) return "";
 
-  const summarizer = await ai.summarizer.create({
+  const summarizer = await aiAdapter.createSummarizer({
     sharedContext: "Generate a single sentence summary of the following text",
     type: "headline", // Options: headline, key-points, tl;dr, teaser
     format: "markdown", // Options: markdown, plain-text
@@ -112,7 +135,7 @@ async function getSummarizerSummary(longText) {
 }
 
 async function getPromptSummary(longText) {
-  const session = await ai.languageModel.create({
+  const session = await aiAdapter.createLanguageSession({
     temperature: 0.7,
     topK: 40,
     systemPrompt: "Generate a single sentence summary of the following text.",
