@@ -1,227 +1,355 @@
-const extOpts = {
-  // todo: make the options part of configurable settings in popup
-  aiReady: (() => {
-    if (!ai || !ai.languageModel || !ai.summarizer || !ai.rewriter)
-      return false;
-    return true;
-  })(),
-  timeout: 7000,
+// OmniFocus Tab Saver - Background Service Worker
+
+// Default settings
+const DEFAULT_SETTINGS = {
   summaryEnabled: true,
-  debug: true,
-  minLength: 50,
-  summaryFn: getPromptSummary,
+  summaryType: 'headline',
+  summaryLength: 'short',
+  timeout: 7000,
+  debug: false,
+  minTextLength: 50
 };
 
-// Minimal logger
-const log = (() => {
-  const fmt =
-    (level, color) =>
-    (...args) =>
-      console[level === "debug" ? "log" : level](
-        `%c[${new Date().toTimeString().slice(0, 8)}][${level.toUpperCase()}]`,
-        `color:${color}`,
-        ...args
-      );
-  return {
-    debug: extOpts.debug ? fmt("debug", "#888") : () => {},
-    info: fmt("info", "#0c5"),
-    warn: fmt("warn", "#f90"),
-    error: fmt("error", "#f43"),
-  };
-})();
+// Current settings (will be loaded from storage)
+let settings = { ...DEFAULT_SETTINGS };
 
-/**
- * Wraps a promise with a timeout
- * @param {Promise} promise - The promise to wrap
- * @param {number} duration - Timeout in milliseconds
- * @param {string} message - Custom error message
- * @returns {Promise} - A promise that will reject if the timeout occurs
- */
+// Logger utility
+const log = {
+  debug: (...args) => settings.debug && console.log('[DEBUG]', ...args),
+  info: (...args) => console.log('[INFO]', ...args),
+  warn: (...args) => console.warn('[WARN]', ...args),
+  error: (...args) => console.error('[ERROR]', ...args)
+};
+
+// Load settings from storage
+async function loadSettings() {
+  try {
+    const stored = await chrome.storage.sync.get(DEFAULT_SETTINGS);
+    settings = { ...DEFAULT_SETTINGS, ...stored };
+    log.debug('Settings loaded:', settings);
+  } catch (error) {
+    log.error('Failed to load settings:', error);
+  }
+}
+
+// Save settings to storage
+async function saveSettings(newSettings) {
+  try {
+    settings = { ...settings, ...newSettings };
+    await chrome.storage.sync.set(settings);
+    log.debug('Settings saved:', settings);
+  } catch (error) {
+    log.error('Failed to save settings:', error);
+  }
+}
+
+// AI capability detection
+class AICapabilities {
+  static async check() {
+    const capabilities = {
+      available: false,
+      languageModel: false,
+      summarizer: false,
+      rewriter: false,
+      error: null
+    };
+
+    try {
+      if (typeof ai === 'undefined') {
+        capabilities.error = 'Chrome AI not available';
+        return capabilities;
+      }
+
+      capabilities.available = true;
+
+      // Check language model
+      if (ai.languageModel) {
+        try {
+          const canCreate = await ai.languageModel.capabilities();
+          capabilities.languageModel = canCreate.available === 'readily';
+        } catch (e) {
+          log.debug('Language model check failed:', e);
+        }
+      }
+
+      // Check summarizer
+      if (ai.summarizer) {
+        try {
+          const canCreate = await ai.summarizer.capabilities();
+          capabilities.summarizer = canCreate.available === 'readily';
+        } catch (e) {
+          log.debug('Summarizer check failed:', e);
+        }
+      }
+
+      // Check rewriter
+      if (ai.rewriter) {
+        try {
+          const canCreate = await ai.rewriter.capabilities();
+          capabilities.rewriter = canCreate.available === 'readily';
+        } catch (e) {
+          log.debug('Rewriter check failed:', e);
+        }
+      }
+    } catch (error) {
+      capabilities.error = error.message;
+      log.error('AI capability check failed:', error);
+    }
+
+    return capabilities;
+  }
+}
+
+// Utility to add timeout to promises
 async function withTimeout(promise, duration, message) {
   const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(
-      () => reject(new Error(message || `Timed out after ${duration}ms`)),
-      duration
-    );
+    setTimeout(() => reject(new Error(message || `Timeout after ${duration}ms`)), duration);
   });
-
   return Promise.race([promise, timeoutPromise]);
 }
 
-/**
- * Extracts the main text content from a tab
- * @param {chrome.tabs.Tab} tab - The browser tab to extract content from
- * @returns {string} The text content of the main article or body
- */
+// Extract text content from a tab
 async function getTextContent(tab) {
-  const [textResult] = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    function: () => {
-      const article =
-        document.querySelector("article") ||
-        document.querySelector("main") ||
-        document.body;
-      return article.innerText.trim();
-    },
-  });
-  return textResult.result;
+  try {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      function: () => {
+        // Try to find the main content area
+        const article = document.querySelector('article') || 
+                       document.querySelector('main') || 
+                       document.querySelector('[role="main"]') ||
+                       document.querySelector('.content') ||
+                       document.body;
+        
+        // Clean up the text
+        const text = article.innerText || article.textContent || '';
+        return text.trim().replace(/\s+/g, ' ').substring(0, 5000); // Limit to 5000 chars
+      }
+    });
+    return result.result;
+  } catch (error) {
+    log.error('Failed to extract text content:', error);
+    return '';
+  }
 }
 
-/**
- * Extracts the full HTML content from a tab
- * @param {chrome.tabs.Tab} tab - The browser tab to extract HTML from
- * @returns {string} The full HTML content of the page
- */
-async function getHtmlContent(tab) {
-  const [htmlResult] = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    function: () => document.documentElement.innerHTML,
-  });
-  return htmlResult.result;
+// Generate AI summary using language model
+async function generatePromptSummary(text) {
+  if (!text || text.length < settings.minTextLength) {
+    return '';
+  }
+
+  try {
+    const session = await ai.languageModel.create({
+      temperature: 0.7,
+      topK: 40,
+      systemPrompt: `Generate a single ${settings.summaryType} summary of the following text. 
+                     Keep it ${settings.summaryLength} and informative.`
+    });
+
+    const summary = await session.prompt(text);
+    session.destroy();
+    return summary;
+  } catch (error) {
+    log.error('Prompt summary failed:', error);
+    throw error;
+  }
 }
 
-/**
- * Generates a summary of provided text using Chrome's AI API
- * @param {string} longText - The text to summarize
- * @returns {Promise<string>} A summary of the text
- * @throws {Error} If AI summarization fails
- */
-async function getSummarizerSummary(longText) {
-  /**
-   from some testing, it seems that the prompt is better than the summarizer
-   --
-   sharedContext: Additional shared context that can help the summarizer.
-   type: The type of the summarization, with the allowed values key-points (default), tl;dr, teaser, and headline.
-   format: The format of the summarization, with the allowed values markdown (default), and plain-text.
-   length: The length of the summarization, with the allowed values short, medium (default), and long. The meanings of these
-   lengths vary depending on the type requested. For example, in Chrome's implementation, a short key-points summary consists
-   of three bullet points, and a short summary is one sentence; a long key-points summary is seven bullet points, and a long summary is a paragraph.
-  **/
+// Generate AI summary using summarizer API
+async function generateSummarizerSummary(text) {
+  if (!text || text.length < settings.minTextLength) {
+    return '';
+  }
 
-  // check if text is too short
-  if (longText.length < extOpts.minLength) return "";
+  try {
+    const summarizer = await ai.summarizer.create({
+      type: settings.summaryType,
+      format: 'plain-text',
+      length: settings.summaryLength
+    });
 
-  const summarizer = await ai.summarizer.create({
-    sharedContext: "Generate a single sentence summary of the following text",
-    type: "headline", // Options: headline, key-points, tl;dr, teaser
-    format: "markdown", // Options: markdown, plain-text
-    length: "short", // Options: short, medium, long
-  });
-
-  return await summarizer.summarize(longText);
+    const summary = await summarizer.summarize(text);
+    summarizer.destroy();
+    return summary;
+  } catch (error) {
+    log.error('Summarizer failed:', error);
+    throw error;
+  }
 }
 
-async function getPromptSummary(longText) {
-  const session = await ai.languageModel.create({
-    temperature: 0.7,
-    topK: 40,
-    systemPrompt: "Generate a single sentence summary of the following text.",
-  });
-
-  const prompt = await session.prompt(longText);
-  return prompt;
-}
-
-/**
- * Adds the current tab to OmniFocus with optional AI summary
- * @param {chrome.tabs.Tab} tab - The browser tab to add to OmniFocus
- * @returns {Promise<void>}
- */
-async function addToOmniFocus(tab, { doAI = true } = {}) {
-  if (!tab || !tab.url) throw new Error("Invalid tab provided");
+// Add tab to OmniFocus
+async function addToOmniFocus(tab, options = {}) {
+  const { includeSummary = true } = options;
+  
+  if (!tab || !tab.url || !tab.title) {
+    throw new Error('Invalid tab data');
+  }
 
   let noteContent = tab.url;
-  log.info(`adding to of:{AI:${doAI},Fn:${extOpts.summaryFn.name}}`);
+  let summaryGenerated = false;
 
-  if (doAI && extOpts.summaryEnabled && extOpts.aiReady) {
+  // Try to generate summary if enabled
+  if (includeSummary && settings.summaryEnabled) {
     try {
-      const pageText = await getTextContent(tab);
-      const summary = await withTimeout(
-        extOpts.summaryFn(pageText),
-        extOpts.timeout,
-        `Summary for ${tab.url}`
-      );
-      if (summary) noteContent = `${tab.url}\n\n${summary}`;
-    } catch (err) {
-      log.error(`Timeout`, err);
+      const capabilities = await AICapabilities.check();
+      
+      if (capabilities.languageModel || capabilities.summarizer) {
+        const pageText = await getTextContent(tab);
+        
+        if (pageText) {
+          let summary = '';
+          
+          // Try language model first (usually better)
+          if (capabilities.languageModel) {
+            try {
+              summary = await withTimeout(
+                generatePromptSummary(pageText),
+                settings.timeout,
+                'Summary generation timed out'
+              );
+            } catch (e) {
+              log.debug('Language model summary failed:', e);
+            }
+          }
+          
+          // Fall back to summarizer if needed
+          if (!summary && capabilities.summarizer) {
+            try {
+              summary = await withTimeout(
+                generateSummarizerSummary(pageText),
+                settings.timeout,
+                'Summary generation timed out'
+              );
+            } catch (e) {
+              log.debug('Summarizer API failed:', e);
+            }
+          }
+          
+          if (summary) {
+            noteContent = `${tab.url}\n\n${summary}`;
+            summaryGenerated = true;
+          }
+        }
+      }
+    } catch (error) {
+      log.error('Summary generation failed:', error);
     }
   }
 
-  const item = {
-    name: encodeURIComponent(tab.title),
-    note: encodeURIComponent(noteContent),
-  };
-
-  try {
-    const omnifocusUrl = `omnifocus:///add?name=${item.name}&note=${item.note}`;
-
+  // Create OmniFocus URL
+  const omnifocusUrl = `omnifocus:///add?name=${encodeURIComponent(tab.title)}&note=${encodeURIComponent(noteContent)}`;
+  
+  // Open and quickly close the URL
+  return new Promise((resolve, reject) => {
     chrome.tabs.create({ url: omnifocusUrl, active: false }, (newTab) => {
-      setTimeout(() => chrome.tabs.remove(newTab.id), 500);
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      
+      // Close the tab after a short delay
+      setTimeout(() => {
+        chrome.tabs.remove(newTab.id).catch(() => {
+          // Ignore errors when closing (tab might already be closed)
+        });
+      }, 500);
+      
+      resolve({ success: true, summaryGenerated });
     });
-  } catch (error) {
-    log.error("Failed to create OmniFocus task:", error);
-  }
+  });
 }
 
-const handlers = {
-  addToOmnifocusPopupNoSummary: () => {
-    return new Promise((resolve, reject) => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (!tabs || !tabs[0]) {
-          reject(new Error("No active tab found"));
-          return;
-        }
-        addToOmniFocus(tabs[0], { doAI: false }).then(resolve).catch(reject);
-      });
-    });
+// Message handlers
+const messageHandlers = {
+  async addToOmniFocus(data, sender) {
+    const { includeSummary = true } = data;
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    
+    if (!tab) {
+      throw new Error('No active tab found');
+    }
+    
+    return await addToOmniFocus(tab, { includeSummary });
   },
-  addToOmnifocusPopupSummary: () => {
-    return new Promise((resolve, reject) => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (!tabs || !tabs[0]) {
-          reject(new Error("No active tab found"));
-          return;
-        }
-        addToOmniFocus(tabs[0], { doAI: true }).then(resolve).catch(reject);
-      });
-    });
+
+  async getAICapabilities() {
+    return await AICapabilities.check();
   },
-  openPopup: () => {
-    chrome.action.setPopup({ popup: "popup.html" });
+
+  async getSettings() {
+    return settings;
   },
+
+  async saveSettings(data) {
+    await saveSettings(data.settings);
+    return { success: true };
+  }
 };
 
-// Main message listener with dispatch pattern
+// Handle messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  const { action } = message;
-
-  if (handlers[action]) {
-    // Keep the message channel open for the async response
-    handlers[action]()
-      .then(() => {
-        sendResponse({ success: true });
-        chrome.action.setPopup({ popup: "" });
-      })
-      .catch((error) => {
-        log.error("Failed to add to OmniFocus:", error);
+  const { action, ...data } = message;
+  
+  if (messageHandlers[action]) {
+    messageHandlers[action](data, sender)
+      .then(result => sendResponse({ success: true, ...result }))
+      .catch(error => {
+        log.error(`Action ${action} failed:`, error);
         sendResponse({ success: false, error: error.message });
       });
-    return true; // Keep message channel open
+    return true; // Keep message channel open for async response
   }
-
-  // Handle unknown action
+  
   sendResponse({ success: false, error: `Unknown action: ${action}` });
-  return false;
 });
 
-// Handle direct clicks (when popup is not shown)
-chrome.action.onClicked.addListener((tab) => {
-  handlers.openPopup();
-});
-
-// Listen for keyboard shortcuts
-chrome.commands.onCommand.addListener((command) => {
-  if (handlers[command]) {
-    handlers[command]();
+// Handle keyboard shortcuts
+chrome.commands.onCommand.addListener(async (command) => {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    
+    if (!tab) {
+      log.error('No active tab for command:', command);
+      return;
+    }
+    
+    switch (command) {
+      case 'quick-add-with-summary':
+        await addToOmniFocus(tab, { includeSummary: true });
+        break;
+      case 'quick-add-no-summary':
+        await addToOmniFocus(tab, { includeSummary: false });
+        break;
+    }
+  } catch (error) {
+    log.error('Command failed:', command, error);
   }
 });
+
+// Handle extension icon click (when popup is disabled)
+chrome.action.onClicked.addListener(async (tab) => {
+  try {
+    await addToOmniFocus(tab, { includeSummary: settings.summaryEnabled });
+  } catch (error) {
+    log.error('Failed to add tab to OmniFocus:', error);
+  }
+});
+
+// Initialize on install/update
+chrome.runtime.onInstalled.addListener(async (details) => {
+  await loadSettings();
+  
+  if (details.reason === 'install') {
+    // Open options page on first install
+    chrome.runtime.openOptionsPage();
+  }
+});
+
+// Load settings on startup
+chrome.runtime.onStartup.addListener(async () => {
+  await loadSettings();
+});
+
+// Initialize settings
+loadSettings();

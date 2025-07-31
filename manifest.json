@@ -1,12 +1,13 @@
 {
     "manifest_version": 3,
     "name": "OmniFocus Tab Saver",
-    "version": "0.0.2",
-    "description": "Adds current tab to OmniFocus with AI summary",
+    "version": "1.0.0",
+    "description": "Save tabs to OmniFocus with AI-powered summaries",
     "permissions": [
         "activeTab",
         "scripting",
-        "tabs"
+        "tabs",
+        "storage"
     ],
     "optional_permissions": [],
     "host_permissions": [
@@ -15,17 +16,6 @@
     "background": {
         "service_worker": "background.js"
     },
-    "content_scripts": [
-        {
-            "matches": [
-                "<all_urls>"
-            ],
-            "js": [
-                "content-script.js"
-            ],
-            "run_at": "document_start"
-        }
-    ],
     "action": {
         "default_popup": "popup.html",
         "default_icon": {
@@ -39,6 +29,7 @@
         "48": "icons/icon48.png",
         "128": "icons/icon128.png"
     },
+    "options_page": "options.html",
     "commands": {
         "_execute_action": {
             "suggested_key": {
@@ -47,12 +38,19 @@
             },
             "description": "Open the OmniFocus Tab Saver popup"
         },
-        "addToOmnifocusPopupSummary": {
+        "quick-add-with-summary": {
             "suggested_key": {
                 "default": "Alt+Shift+O",
                 "mac": "Alt+Shift+O"
             },
-            "description": "Open the OmniFocus Tab Saver popup with AI summary"
+            "description": "Quick add to OmniFocus with AI summary"
+        },
+        "quick-add-no-summary": {
+            "suggested_key": {
+                "default": "Alt+O",
+                "mac": "Alt+O"
+            },
+            "description": "Quick add to OmniFocus without summary"
         }
     }
 }
