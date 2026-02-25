@@ -61,3 +61,11 @@ This extension supports Chrome's AI features to generate a one-line summary of w
 - Browser API's:
   - https://github.com/webmachinelearning/writing-assistance-apis
   - https://github.com/webmachinelearning/prompt-api/tree/main
+
+# External Docs
+
+- https://developer.mozilla.org/en-US/docs/Web/API/Summarizer
+
+- https://developer.mozilla.org/en-US/docs/Web/API/Summarizer
+- https://developer.chrome.com/docs/ai/built-in-apis
+- https://developer.chrome.com/docs/ai/summarizer-api

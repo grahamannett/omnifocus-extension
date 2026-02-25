@@ -1,8 +1,15 @@
 const extOpts = {
   // todo: make the options part of configurable settings in popup
   aiReady: (() => {
-    if (!ai || !ai.languageModel || !ai.summarizer || !ai.rewriter)
+    if (
+      !("Summarizer" in self) ||
+      !("LanguageModel" in self) ||
+      !("Rewriter" in self)
+    ) {
+      console.log("ai not ready!!!");
       return false;
+    }
+    console.log("ai ready!!!");
     return true;
   })(),
   timeout: 7000,
@@ -10,6 +17,29 @@ const extOpts = {
   debug: true,
   minLength: 50,
   summaryFn: getPromptSummary,
+};
+
+const ModelHelpers = {
+  Summarizer: {
+    options: {
+      sharedContext: "Generate a single sentence summary of the following text",
+      type: "headline", // Options: headline, key-points, tl;dr, teaser
+      format: "markdown", // Options: markdown, plain-text
+      length: "short", // Options: short, medium, long
+    },
+  },
+  LanguageModel: {
+    options: {
+      temperature: 0.7,
+      topK: 40,
+      initialPrompts: [
+        {
+          role: "system",
+          content: "Generate a single sentence summary of the following text.",
+        },
+      ],
+    },
+  },
 };
 
 // Minimal logger
@@ -101,7 +131,7 @@ async function getSummarizerSummary(longText) {
   // check if text is too short
   if (longText.length < extOpts.minLength) return "";
 
-  const summarizer = await ai.summarizer.create({
+  const summarizer = await Summarizer.create({
     sharedContext: "Generate a single sentence summary of the following text",
     type: "headline", // Options: headline, key-points, tl;dr, teaser
     format: "markdown", // Options: markdown, plain-text
@@ -112,10 +142,16 @@ async function getSummarizerSummary(longText) {
 }
 
 async function getPromptSummary(longText) {
-  const session = await ai.languageModel.create({
+  // const initialPrompt =
+  const session = await LanguageModel.create({
     temperature: 0.7,
     topK: 40,
-    systemPrompt: "Generate a single sentence summary of the following text.",
+    initialPrompts: [
+      {
+        role: "system",
+        content: "Generate a single sentence summary of the following text.",
+      },
+    ],
   });
 
   const prompt = await session.prompt(longText);
@@ -127,13 +163,13 @@ async function getPromptSummary(longText) {
  * @param {chrome.tabs.Tab} tab - The browser tab to add to OmniFocus
  * @returns {Promise<void>}
  */
-async function addToOmniFocus(tab, { doAI = true } = {}) {
+async function addToOmniFocus(tab, { llmEnabled = true } = {}) {
   if (!tab || !tab.url) throw new Error("Invalid tab provided");
 
   let noteContent = tab.url;
-  log.info(`adding to of:{AI:${doAI},Fn:${extOpts.summaryFn.name}}`);
+  log.info(`adding to of:{AI:${llmEnabled},Fn:${extOpts.summaryFn.name}}`);
 
-  if (doAI && extOpts.summaryEnabled && extOpts.aiReady) {
+  if (llmEnabled && extOpts.summaryEnabled && extOpts.aiReady) {
     try {
       const pageText = await getTextContent(tab);
       const summary = await withTimeout(
@@ -171,7 +207,9 @@ const handlers = {
           reject(new Error("No active tab found"));
           return;
         }
-        addToOmniFocus(tabs[0], { doAI: false }).then(resolve).catch(reject);
+        addToOmniFocus(tabs[0], { llmEnabled: false })
+          .then(resolve)
+          .catch(reject);
       });
     });
   },
@@ -182,14 +220,16 @@ const handlers = {
           reject(new Error("No active tab found"));
           return;
         }
-        addToOmniFocus(tabs[0], { doAI: true }).then(resolve).catch(reject);
+        addToOmniFocus(tabs[0], { llmEnabled: true })
+          .then(resolve)
+          .catch(reject);
       });
     });
   },
-  openPopup: () => {
-    chrome.action.setPopup({ popup: "popup.html" });
-  },
+  openPopup: () => chrome.action.setPopup({ popup: "popup.html" }),
 };
+
+console.log("background.js loaded");
 
 // Main message listener with dispatch pattern
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -225,3 +265,71 @@ chrome.commands.onCommand.addListener((command) => {
     handlers[command]();
   }
 });
+
+async function getAISummary11(longText) {
+  if (!("Summarizer" in self)) {
+    throw new Error("Summarizer API not supported");
+  }
+
+  // check if text is too short
+  if (longText.length < extOpts.minLength) {
+    log.info("Text too short for summary, skipping.");
+    return "";
+  }
+
+  const options = {
+    sharedContext: "Generate a single sentence summary of the following text",
+    type: "headline", // Options: headline, key-points, tldr, teaser
+    format: "markdown", // Options: markdown, plain-text
+    length: "short", // Options: short, medium, long
+  };
+
+  const availability = await self.Summarizer.availability(options);
+  if (availability === "unavailable") {
+    throw new Error("Summarizer is not available with the given options.");
+  }
+
+  if (availability === "downloading" || availability === "downloadable") {
+    log.info("Summarizer model requires download, this might take a moment...");
+  }
+
+  const summarizer = await self.Summarizer.create({
+    ...options,
+    monitor(m) {
+      m.addEventListener("downloadprogress", (e) => {
+        log.info(
+          `Downloading summarizer model: ${Math.round(e.loaded * 100)}%`
+        );
+      });
+    },
+  });
+
+  return await summarizer.summarize(longText);
+}
+
+function addToOmnifocusWithSummary11() {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (!tabs || !tabs[0]) {
+        return reject(new Error("No active tab found"));
+      }
+      addToOmniFocus(tabs[0], { llmEnabled: true }).then(resolve).catch(reject);
+    });
+  });
+}
+
+// Handle direct clicks on the extension icon
+// chrome.action.onClicked.addListener((tab) => {
+//   addToOmnifocusWithSummary().catch((error) => {
+//     log.error("Failed to add to OmniFocus:", error);
+//   });
+// });
+
+// // Listen for keyboard shortcuts
+// chrome.commands.onCommand.addListener((command) => {
+//   if (command === "addToOmnifocusPopupSummary") {
+//     addToOmnifocusWithSummary().catch((error) => {
+//       log.error("Failed to add to OmniFocus from command:", error);
+//     });
+//   }
+// });
