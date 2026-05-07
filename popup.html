@@ -5,14 +5,32 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OmniFocus Tab Saver</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
     <style>
         :root {
-            --bg-color: #ffffff;
-            --text-color: #000000;
-            --button-face: #c0c0c0;
-            --button-highlight: #ffffff;
-            --button-shadow: #808080;
-            --button-dark-shadow: #404040;
+            --plat-1: #f3f2eb;
+            --plat-2: #e6e3d8;
+            --plat-3: #d3cfbf;
+            --plat-edge: #8a8576;
+            --plat-shadow: #4a4538;
+            --rule: #c4bfae;
+            --rule-strong: #968f7c;
+            --paper: #faf8f0;
+            --ink: #1a1a1a;
+            --ink-2: #3d3a30;
+            --ink-3: #6c6650;
+            --ink-4: #968f7c;
+            --of-blue: #2c5fb8;
+            --of-blue-2: #5a8de8;
+            --of-blue-deep: #1d3f7d;
+            --flag-orange: #d96a1f;
+            --font-chrome: "Silkscreen", "Chicago", system-ui, sans-serif;
+            --font-mono: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+            --font-ui: "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
         }
 
         * {
@@ -21,105 +39,848 @@
             box-sizing: border-box;
         }
 
-        html {
-            font-family: "MS Sans Serif", Arial, sans-serif;
-        }
-
+        html,
         body {
-            width: 260px;
-            background-color: var(--bg-color);
-            color: var(--text-color);
+            width: 380px;
+            font-family: var(--font-ui);
+            background: var(--plat-1);
+            color: var(--ink);
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
         }
 
-        .container {
-            padding: 16px;
+        /* ── pinstripe titlebar ── */
+        .pop-titlebar {
+            height: 20px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0 5px;
+            background: repeating-linear-gradient(180deg, #fff 0 1px, #d8d4c4 1px 2px);
+            border-bottom: 1px solid var(--plat-shadow);
+            box-shadow: inset 0 -1px 0 var(--plat-edge), inset 0 1px 0 #fff;
+            font-family: var(--font-chrome);
+            font-size: 9px;
+            user-select: none;
         }
 
-        .button {
-            display: inline-flex;
+        .pop-titlebar .close-box,
+        .pop-titlebar .grow-box {
+            width: 12px;
+            height: 12px;
+            background: var(--plat-1);
+            border: 1px solid var(--plat-shadow);
+            box-shadow: inset 1px 1px 0 #fff;
+            cursor: pointer;
+            flex-shrink: 0;
+            padding: 0;
+            outline: none;
+            display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: normal;
+            font-family: var(--font-ui);
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1;
+            color: var(--ink-2);
+        }
+
+        .pop-titlebar .close-box {
             font-size: 12px;
-            height: 30px;
-            /* padding: 0 12px; */
+        }
+
+        .pop-titlebar .close-box:hover,
+        .pop-titlebar .grow-box:hover {
+            background: var(--plat-2);
+        }
+
+        .pop-titlebar .close-box:active,
+        .pop-titlebar .grow-box:active {
+            background: var(--plat-3);
+            box-shadow: inset 1px 1px 0 var(--plat-shadow);
+        }
+
+        .pop-titlebar .grow-box.invisible {
+            visibility: hidden;
+        }
+
+        .pop-titlebar .ttl {
+            flex: 1;
+            text-align: center;
+            background: var(--plat-1);
+            padding: 1px 8px;
+            line-height: 1;
+        }
+
+        .pop-titlebar .ttl .mark {
+            color: var(--of-blue);
+            margin-right: 4px;
+            font-weight: 700;
+        }
+
+        /* ── compact header: favicon + source + title ── */
+        .pop-head {
+            padding: 12px 12px 10px;
+            background: var(--paper);
+            border-bottom: 1px solid var(--rule);
+        }
+
+        .pop-source {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--ink-3);
+            font-family: var(--font-mono);
+            font-size: 10.5px;
+            margin-bottom: 8px;
+        }
+
+        .favicon-px {
+            width: 12px;
+            height: 12px;
+            image-rendering: pixelated;
+            flex-shrink: 0;
+            border: 1px solid var(--ink-3);
+            box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .5);
+            background: linear-gradient(135deg, #2c5fb8, #7dadff);
+        }
+
+        .pop-source .host {
+            color: var(--ink);
+            font-weight: 500;
+        }
+
+        .pop-source .path {
+            color: var(--ink-4);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .pop-title {
             width: 100%;
-            /* margin-bottom: 10px; */
-            background-color: var(--button-face);
-            color: var(--text-color);
-            border: 2px solid;
-            border-color: var(--button-highlight) var(--button-dark-shadow) var(--button-dark-shadow) var(--button-highlight);
-            box-shadow: 1px 1px 0px var(--button-shadow) inset, -1px -1px 0px var(--button-shadow) inset;
-            border-radius: 0;
+            border: 1px solid var(--plat-shadow);
+            box-shadow: inset 1px 1px 0 #cfcbbb;
+            background: #fff;
+            font-family: var(--font-ui);
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--ink);
+            line-height: 1.3;
+            letter-spacing: -.005em;
+            padding: 5px 7px;
+            outline: none;
+            resize: none;
+            min-height: 24px;
+        }
+
+        /* ── presets / quick date+flag ── */
+        .presets {
+            display: flex;
+            gap: 4px;
+            padding: 8px 10px;
+            background: var(--plat-1);
+            border-bottom: 1px solid var(--rule);
+        }
+
+        .preset {
+            flex: 1;
+            height: 22px;
+            border: 1px solid var(--plat-shadow);
+            background: linear-gradient(180deg, #fdfdfb 0%, #f1eee2 50%, #d8d4c4 100%);
+            box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 var(--plat-3);
+            color: var(--ink);
+            font-family: var(--font-ui);
+            font-size: 11px;
+            font-weight: 600;
             cursor: pointer;
-            position: relative;
+            line-height: 1;
+            border-radius: 2px;
         }
 
-        .button:active {
-            border-color: var(--button-dark-shadow) var(--button-highlight) var(--button-highlight) var(--button-dark-shadow);
-            box-shadow: 1px 1px 0px var(--button-dark-shadow) inset, -1px -1px 0px var(--button-shadow) inset;
-            padding-top: 1px;
-            padding-left: 1px;
+        .preset:hover {
+            background: linear-gradient(180deg, #fff 0%, #f5f3e8 50%, #ddd9ca 100%);
         }
 
-        .button:focus {
-            outline: 1px dotted black;
-            outline-offset: -4px;
+        .preset:active,
+        .preset.on {
+            background: linear-gradient(180deg, #c8c4b4 0%, #d8d4c4 50%, #e8e4d4 100%);
+            box-shadow: inset 1px 1px 0 var(--plat-3), inset -1px -1px 0 #fff;
         }
 
-        .button-icon {
-            margin-right: 8px;
-            height: 16px;
-            width: 16px;
+        /* ── meta list: 3 dotted rows ── */
+        .meta-list {
+            background: var(--paper);
+            padding: 2px 0;
         }
 
+        .meta-row {
+            display: grid;
+            grid-template-columns: 60px 1fr;
+            border-bottom: 1px dotted var(--rule);
+            font-size: 12px;
+            cursor: default;
+        }
+
+        .meta-row:last-child {
+            border-bottom: 0;
+        }
+
+        .meta-row.hidden {
+            display: none;
+        }
+
+        .meta-row:hover {
+            background: var(--of-blue);
+            color: #fff;
+        }
+
+        .meta-row:hover .lbl,
+        .meta-row:hover .val,
+        .meta-row:hover .val .tag,
+        .meta-row:hover .val .date,
+        .meta-row:hover .val .placeholder,
+        .meta-row:hover .val .lbl-inline,
+        .meta-row:hover .project-select,
+        .meta-row:hover .val .tag::before {
+            color: #fff;
+        }
+
+        .meta-row .lbl {
+            padding: 5px 8px;
+            color: var(--ink-3);
+            font-family: var(--font-mono);
+            font-size: 10.5px;
+            text-align: right;
+        }
+
+        .meta-row .val {
+            padding: 5px 8px;
+            color: var(--ink);
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 4px 8px;
+        }
+
+        .meta-row .val .tag {
+            color: var(--ink-4);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            cursor: pointer;
+            background: transparent;
+            border: 0;
+            padding: 0;
+        }
+
+        .meta-row .val .tag::before {
+            content: "@";
+            color: var(--of-blue);
+            font-weight: 600;
+        }
+
+        .meta-row .val .tag.on {
+            color: var(--ink);
+            font-weight: 500;
+        }
+
+        .meta-row:hover .val .tag::before {
+            color: #ffd76a;
+        }
+
+        .tag-add {
+            border: 0;
+            background: transparent;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--ink-3);
+            cursor: pointer;
+            padding: 0 14px 0 0;
+            margin: 0;
+            appearance: none;
+            -webkit-appearance: none;
+            outline: none;
+            background-image:
+                linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
+                linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+            background-position: calc(100% - 9px) center, calc(100% - 5px) center;
+            background-size: 4px 4px, 4px 4px;
+            background-repeat: no-repeat;
+        }
+
+        .tag-add:hover {
+            color: var(--ink);
+        }
+
+        .meta-row:hover .tag-add {
+            color: #fff;
+            background-image:
+                linear-gradient(45deg, transparent 50%, #fff 50%),
+                linear-gradient(135deg, #fff 50%, transparent 50%);
+        }
+
+        body[data-theme="sea"] .meta-row:hover .tag-add {
+            color: var(--ink);
+            background-image:
+                linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
+                linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+        }
+
+        .meta-row .val .date {
+            font-family: var(--font-mono);
+            font-size: 11px;
+        }
+
+        .meta-row .val .lbl-inline {
+            font-family: var(--font-chrome);
+            font-size: 8px;
+            text-transform: uppercase;
+            color: var(--ink-3);
+            margin-right: 4px;
+            letter-spacing: .04em;
+        }
+
+        .meta-row .val .placeholder {
+            color: var(--ink-4);
+            font-style: italic;
+        }
+
+        .meta-row .val .flag-on {
+            color: var(--flag-orange);
+            font-family: var(--font-mono);
+            font-size: 11px;
+        }
+
+        .meta-row:hover .val .flag-on {
+            color: #ffd76a;
+        }
+
+        .project-select {
+            border: 0;
+            background: transparent;
+            font: inherit;
+            color: var(--ink);
+            cursor: pointer;
+            padding: 0 12px 0 0;
+            margin: 0;
+            appearance: none;
+            -webkit-appearance: none;
+            outline: none;
+            font-family: var(--font-mono);
+            font-size: 11.5px;
+        }
+
+        /* ── note block — yellow sticky ── */
+        .note-block {
+            background: #fffec5;
+            border-top: 1px solid var(--rule-strong);
+            padding: 8px 10px 10px;
+            box-shadow: inset 0 1px 0 #fff;
+        }
+
+        .note-tag {
+            font-family: var(--font-chrome);
+            font-size: 8px;
+            text-transform: uppercase;
+            color: #786311;
+            margin-bottom: 4px;
+            display: block;
+            letter-spacing: .05em;
+        }
+
+        .note-text {
+            width: 100%;
+            border: 0;
+            background: transparent;
+            font-family: var(--font-mono);
+            font-size: 11.5px;
+            line-height: 1.55;
+            color: #2d2410;
+            padding: 0;
+            outline: none;
+            resize: none;
+            min-height: 22px;
+        }
+
+        .note-text::placeholder {
+            color: #aa9658;
+            font-style: italic;
+        }
+
+        .note-loading {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 2px 0;
+        }
+
+        .note-loading span {
+            height: 7px;
+            background: repeating-linear-gradient(90deg, #d4b94f 0 3px, transparent 3px 6px);
+            animation: pxshift 1s steps(3) infinite;
+        }
+
+        .note-loading span:nth-child(1) {
+            width: 100%;
+        }
+
+        .note-loading span:nth-child(2) {
+            width: 88%;
+        }
+
+        .note-loading span:nth-child(3) {
+            width: 60%;
+        }
+
+        @keyframes pxshift {
+            0% {
+                background-position: 0 0;
+            }
+
+            100% {
+                background-position: 12px 0;
+            }
+        }
+
+        /* ── status ── */
         .status {
             text-align: center;
-            margin-top: 10px;
-            font-size: 14px;
-            color: #333;
-            min-height: 20px;
+            padding: 6px 10px;
+            font-size: 11px;
+            color: var(--ink-3);
+            font-family: var(--font-mono);
+            min-height: 14px;
+            background: var(--plat-1);
+            border-top: 1px solid #fff;
         }
 
-        .summary-result {
-            margin-top: 10px;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 12px;
-            max-height: 100px;
-            overflow-y: auto;
-            background-color: #f9f9f9;
+        .status.error {
+            color: #b03030;
+        }
+
+        .status:empty {
+            display: none;
+        }
+
+        /* ── footer buttons ── */
+        .pop-foot {
+            display: flex;
+            align-items: center;
+            padding: 8px 10px 10px;
+            gap: 6px;
+            background: var(--plat-1);
+            border-top: 1px solid #fff;
+        }
+
+        .pop-foot .spacer {
+            flex: 1;
+        }
+
+        .btn-px {
+            height: 22px;
+            padding: 0 12px;
+            border: 1px solid var(--plat-shadow);
+            background: linear-gradient(180deg, #fdfdfb 0%, #f1eee2 50%, #d8d4c4 100%);
+            box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 var(--plat-3);
+            color: var(--ink);
+            font-family: var(--font-ui);
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            line-height: 1;
+            border-radius: 2px;
+        }
+
+        .btn-px:hover {
+            background: linear-gradient(180deg, #fff 0%, #f5f3e8 50%, #ddd9ca 100%);
+        }
+
+        .btn-px:active {
+            background: linear-gradient(180deg, #c8c4b4 0%, #d8d4c4 50%, #e8e4d4 100%);
+            box-shadow: inset 1px 1px 0 var(--plat-3), inset -1px -1px 0 #fff;
+        }
+
+        .btn-px:disabled {
+            opacity: .55;
+            cursor: default;
+        }
+
+        .btn-px.ghost {
+            background: transparent;
+            border-color: transparent;
+            box-shadow: none;
+            color: var(--ink-2);
+            font-weight: 500;
+        }
+
+        .btn-px.ghost:hover {
+            color: var(--ink);
+            text-decoration: underline;
+            background: transparent;
+        }
+
+        .btn-px.default {
+            border: 1px solid var(--of-blue-deep);
+            background: linear-gradient(180deg, #5a8de8 0%, #2c5fb8 50%, #1d3f7d 100%);
+            box-shadow:
+                inset 1px 1px 0 #a5c2f0,
+                inset -1px -1px 0 #1d3f7d,
+                0 0 0 2px var(--plat-1),
+                0 0 0 3px var(--ink);
+            color: #fff;
+            text-shadow: 0 1px 0 rgba(0, 0, 0, .4);
+            margin-left: 4px;
+        }
+
+        .btn-px.default:hover {
+            background: linear-gradient(180deg, #6f9eef 0%, #3870c8 50%, #2c5fb8 100%);
+        }
+
+        .btn-px.default:active {
+            background: linear-gradient(180deg, #1d3f7d 0%, #2c5fb8 50%, #5a8de8 100%);
+        }
+
+        .btn-px .kbd {
+            font-family: var(--font-chrome);
+            font-size: 8px;
+            border-left: 1px solid rgba(255, 255, 255, .3);
+            padding-left: 5px;
+            margin-left: 3px;
+            line-height: 1.4;
+            opacity: .85;
+        }
+
+        .btn-px:not(.default) .kbd {
+            border-left-color: var(--rule-strong);
+        }
+
+        /* ── settings link ── */
+        .footer-link {
+            display: flex;
+            justify-content: flex-end;
+            padding: 4px 10px 8px;
+            background: var(--plat-1);
+        }
+
+        .footer-link a {
+            font-family: var(--font-chrome);
+            font-size: 8px;
+            text-transform: uppercase;
+            color: var(--ink-3);
+            text-decoration: none;
+            cursor: pointer;
+            letter-spacing: .05em;
+        }
+
+        .footer-link a:hover {
+            color: var(--of-blue);
+            text-decoration: underline;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* ─── Pale Sea theme overrides ─── */
+        body[data-theme="sea"] {
+            background: #f3f7fa;
+        }
+
+        body[data-theme="sea"] .pop-titlebar {
+            background: #2c8db8;
+            border-bottom: 1px solid #1e6488;
+            box-shadow: inset 0 -1px 0 #1e6488;
+            color: #fff;
+        }
+
+        body[data-theme="sea"] .pop-titlebar .ttl {
+            background: transparent;
+            color: #fff;
+        }
+
+        body[data-theme="sea"] .pop-titlebar .ttl .mark {
+            color: #fff;
+        }
+
+        body[data-theme="sea"] .pop-titlebar .close-box,
+        body[data-theme="sea"] .pop-titlebar .grow-box {
+            background: rgba(255, 255, 255, .25);
+            border: 1px solid rgba(255, 255, 255, .55);
+            box-shadow: none;
+        }
+
+        body[data-theme="sea"] .pop-head {
+            background: #fff;
+            border-bottom-color: #e0e8ed;
+        }
+
+        body[data-theme="sea"] .pop-source .host {
+            color: #1a1a1a;
+        }
+
+        body[data-theme="sea"] .pop-source .path {
+            color: #6c7c86;
+        }
+
+        body[data-theme="sea"] .pop-title {
+            border: 1px solid #e0e8ed;
+            box-shadow: none;
+            background: #fff;
+        }
+
+        body[data-theme="sea"] .pop-title:focus {
+            border-color: #2c8db8;
+            box-shadow: 0 0 0 2px rgba(44, 141, 184, .15);
+        }
+
+        body[data-theme="sea"] .presets {
+            background: #fff;
+            border-bottom-color: #e0e8ed;
+        }
+
+        body[data-theme="sea"] .preset {
+            background: #fff;
+            border: 1px solid #e0e8ed;
+            box-shadow: none;
+            color: #1a1a1a;
+        }
+
+        body[data-theme="sea"] .preset:hover {
+            background: #f3f7fa;
+        }
+
+        body[data-theme="sea"] .preset:active,
+        body[data-theme="sea"] .preset.on {
+            background: #2c8db8;
+            color: #fff;
+            border-color: #1e6488;
+            box-shadow: none;
+        }
+
+        body[data-theme="sea"] .meta-list {
+            background: #fff;
+        }
+
+        body[data-theme="sea"] .meta-row {
+            border-bottom: 1px solid #e0e8ed;
+        }
+
+        body[data-theme="sea"] .meta-row:hover {
+            background: #e8f1f6;
+            color: inherit;
+        }
+
+        body[data-theme="sea"] .meta-row:hover .lbl,
+        body[data-theme="sea"] .meta-row:hover .val,
+        body[data-theme="sea"] .meta-row:hover .val .tag,
+        body[data-theme="sea"] .meta-row:hover .val .date,
+        body[data-theme="sea"] .meta-row:hover .val .placeholder,
+        body[data-theme="sea"] .meta-row:hover .val .lbl-inline,
+        body[data-theme="sea"] .meta-row:hover .project-select,
+        body[data-theme="sea"] .meta-row:hover .val .flag-on {
+            color: inherit;
+        }
+
+        body[data-theme="sea"] .meta-row .val .tag::before {
+            color: #2c8db8;
+        }
+
+        body[data-theme="sea"] .meta-row:hover .val .tag::before {
+            color: #2c8db8;
+        }
+
+        body[data-theme="sea"] .meta-row .val .flag-on {
+            color: #d96a1f;
+        }
+
+        body[data-theme="sea"] .note-block {
+            background: #fff;
+            border-top-color: #e0e8ed;
+            box-shadow: none;
+        }
+
+        body[data-theme="sea"] .note-tag {
+            color: #6c7c86;
+        }
+
+        body[data-theme="sea"] .note-text {
+            color: #3d3a30;
+        }
+
+        body[data-theme="sea"] .note-text::placeholder {
+            color: #a3a3a3;
+        }
+
+        body[data-theme="sea"] .note-loading span {
+            background: rgba(0, 0, 0, .06);
+            animation: pulse-sea 1.4s ease-in-out infinite;
+        }
+
+        @keyframes pulse-sea {
+
+            0%,
+            100% {
+                opacity: .4;
+            }
+
+            50% {
+                opacity: .9;
+            }
+        }
+
+        body[data-theme="sea"] .status {
+            background: #fff;
+            border-top-color: #e0e8ed;
+        }
+
+        body[data-theme="sea"] .pop-foot {
+            background: #fff;
+            border-top: 1px solid #e0e8ed;
+        }
+
+        body[data-theme="sea"] .btn-px {
+            background: #fff;
+            border: 1px solid #e0e8ed;
+            box-shadow: none;
+            color: #1a1a1a;
+        }
+
+        body[data-theme="sea"] .btn-px:hover {
+            background: #f3f7fa;
+            border-color: #b8c8d2;
+        }
+
+        body[data-theme="sea"] .btn-px:active {
+            background: #e8f1f6;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, .08);
+        }
+
+        body[data-theme="sea"] .btn-px.ghost {
+            background: transparent;
+            border-color: transparent;
+            color: #3d3a30;
+        }
+
+        body[data-theme="sea"] .btn-px.ghost:hover {
+            background: transparent;
+            color: #1a1a1a;
+            text-decoration: underline;
+        }
+
+        body[data-theme="sea"] .btn-px.default {
+            background: #2c8db8;
+            border: 1px solid #1e6488;
+            box-shadow: none;
+            color: #fff;
+            text-shadow: none;
+        }
+
+        body[data-theme="sea"] .btn-px.default:hover {
+            background: #3098c4;
+        }
+
+        body[data-theme="sea"] .btn-px.default:active {
+            background: #1e6488;
+        }
+
+        body[data-theme="sea"] .btn-px:not(.default) .kbd {
+            border-left-color: #e0e8ed;
+        }
+
+        body[data-theme="sea"] .footer-link {
+            background: #fff;
+            border-top: 1px solid #e0e8ed;
+        }
+
+        body[data-theme="sea"] .footer-link a {
+            color: #6c7c86;
+        }
+
+        body[data-theme="sea"] .footer-link a:hover {
+            color: #2c8db8;
+        }
+
+        body[data-theme="sea"] .favicon-px {
+            border-color: #6c7c86;
         }
     </style>
-
 </head>
 
 <body>
-    <div class="container">
-        <button id="saveToOmniFocus" class="button">
-            <svg class="button-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 5v14"></path>
-                <path d="M5 12h14"></path>
-            </svg>
-            Add to OmniFocus
-        </button>
-
-        <button id="saveToOmniFocusNoSummary" class="button">
-            <svg class="button-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect width="18" height="18" x="3" y="3" rx="2" />
-                <path d="M9 3v18" />
-            </svg>
-            Add without Summary
-        </button>
+    <div class="pop-titlebar">
+        <button class="close-box" id="closeBox" type="button" title="Close">×</button>
+        <div class="ttl"><span class="mark">◎</span>Add to OmniFocus</div>
+        <button class="grow-box" id="popOut" type="button" title="Pop out to draggable modal">⤢</button>
     </div>
 
-    <div id="status" class="status"></div>
+    <div class="pop-head">
+        <div class="pop-source">
+            <span class="favicon-px" id="favicon"></span>
+            <span class="host" id="host">—</span>
+            <span class="path" id="path"></span>
+        </div>
+        <textarea class="pop-title" id="title" rows="2" placeholder="Title…"></textarea>
+    </div>
+
+    <div class="presets">
+        <button class="preset" type="button" data-due="today">Today</button>
+        <button class="preset" type="button" data-due="tomorrow">Tomorrow</button>
+        <button class="preset" type="button" data-due="week">+1 wk</button>
+        <button class="preset" type="button" id="flag">⚑ Flag</button>
+    </div>
+
+    <div class="meta-list">
+        <div class="meta-row hidden" id="projectRow">
+            <div class="lbl">project</div>
+            <div class="val">
+                <select class="project-select" id="project">
+                    <option value="">— Inbox —</option>
+                </select>
+            </div>
+        </div>
+        <div class="meta-row hidden" id="tagsRow">
+            <div class="lbl">tags</div>
+            <div class="val" id="tags">
+                <select class="tag-add" id="tagAdd" title="Add tag">
+                    <option value="">Add tag…</option>
+                </select>
+            </div>
+        </div>
+        <div class="meta-row" id="whenRow">
+            <div class="lbl">when</div>
+            <div class="val" id="whenVal">
+                <span class="placeholder">unscheduled</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="note-block" id="noteBlock">
+        <span class="note-tag" id="noteLabel">Note · summary</span>
+        <div class="note-loading" id="noteLoading">
+            <span></span><span></span><span></span>
+        </div>
+        <textarea class="note-text" id="note" rows="3" placeholder="Add a note…" hidden></textarea>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <div class="pop-foot">
+        <button class="btn-px ghost" id="saveLinkOnly" type="button">Link only</button>
+        <div class="spacer"></div>
+        <button class="btn-px" id="cancel" type="button">Cancel <span class="kbd">esc</span></button>
+        <button class="btn-px default" id="save" type="button">Save <span class="kbd">⏎</span></button>
+    </div>
+
+    <div class="footer-link">
+        <a id="openOptions">Settings</a>
+    </div>
 
     <script src="popup.js"></script>
-
 </body>
 
 </html>

@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <title>OmniFocus Tab Saver — Options</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --plat-1: #f3f2eb;
+      --plat-2: #e6e3d8;
+      --plat-3: #d3cfbf;
+      --plat-edge: #8a8576;
+      --plat-shadow: #4a4538;
+      --rule: #c4bfae;
+      --rule-strong: #968f7c;
+      --paper: #faf8f0;
+      --ink: #1a1a1a;
+      --ink-2: #3d3a30;
+      --ink-3: #6c6650;
+      --ink-4: #968f7c;
+      --of-blue: #2c5fb8;
+      --of-blue-2: #5a8de8;
+      --of-blue-deep: #1d3f7d;
+      --good: #2d5e2a;
+      --warn: #b03030;
+      --font-chrome: "Silkscreen", "Chicago", system-ui, sans-serif;
+      --font-mono: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+      --font-ui: "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      color-scheme: light;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-ui);
+      color: var(--ink);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      background-color: #7d8794;
+      background-image:
+        linear-gradient(45deg, #6e7682 25%, transparent 25%),
+        linear-gradient(-45deg, #6e7682 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #6e7682 75%),
+        linear-gradient(-45deg, transparent 75%, #6e7682 75%);
+      background-size: 4px 4px;
+      background-position: 0 0, 0 2px, 2px -2px, -2px 0;
+      image-rendering: pixelated;
+      padding: 48px 24px 80px;
+    }
+
+    .window {
+      max-width: 720px;
+      margin: 0 auto;
+      background: var(--plat-1);
+      border: 1px solid var(--plat-edge);
+      border-bottom-color: var(--plat-shadow);
+      border-right-color: var(--plat-shadow);
+      box-shadow:
+        inset 1px 1px 0 #fff,
+        4px 4px 0 rgba(0, 0, 0, .30),
+        8px 8px 0 rgba(0, 0, 0, .12);
+    }
+
+    .titlebar {
+      height: 22px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 6px;
+      background: repeating-linear-gradient(180deg, #fff 0 1px, #d8d4c4 1px 2px);
+      border-bottom: 1px solid var(--plat-shadow);
+      box-shadow: inset 0 -1px 0 var(--plat-edge), inset 0 1px 0 #fff;
+      font-family: var(--font-chrome);
+      font-size: 9px;
+      user-select: none;
+    }
+
+    .titlebar .close-box,
+    .titlebar .grow-box {
+      width: 11px;
+      height: 11px;
+      background: var(--plat-1);
+      border: 1px solid var(--plat-shadow);
+      box-shadow: inset 1px 1px 0 #fff;
+      flex-shrink: 0;
+    }
+
+    .titlebar .ttl {
+      flex: 1;
+      text-align: center;
+      background: var(--plat-1);
+      padding: 1px 8px;
+      line-height: 1;
+    }
+
+    .titlebar .ttl .mark {
+      color: var(--of-blue);
+      margin-right: 4px;
+      font-weight: 700;
+    }
+
+    .body {
+      background: var(--paper);
+      padding: 24px 28px 28px;
+    }
+
+    h1 {
+      font-family: var(--font-ui);
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -.005em;
+      margin: 0 0 4px;
+      color: var(--ink);
+    }
+
+    .sub {
+      color: var(--ink-3);
+      font-size: 12px;
+      margin-bottom: 22px;
+      line-height: 1.55;
+      font-family: var(--font-mono);
+    }
+
+    .sub strong {
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    label {
+      display: block;
+      font-family: var(--font-chrome);
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-top: 22px;
+      margin-bottom: 6px;
+      color: var(--ink-3);
+    }
+
+    label .hint {
+      color: var(--ink-4);
+      font-size: 9px;
+      text-transform: uppercase;
+      margin-left: 6px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 130px;
+      padding: 8px 10px;
+      border: 1px solid var(--plat-shadow);
+      box-shadow: inset 1px 1px 0 #cfcbbb;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.55;
+      background: #fff;
+      color: var(--ink);
+      resize: vertical;
+      outline: none;
+      border-radius: 0;
+    }
+
+    textarea:focus {
+      border-color: var(--of-blue);
+      box-shadow: inset 1px 1px 0 #cfcbbb, 0 0 0 2px rgba(44, 95, 184, .15);
+    }
+
+    .row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    p.hint {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--ink-3);
+      margin-top: 8px;
+      line-height: 1.65;
+    }
+
+    p.hint em {
+      font-style: normal;
+      font-weight: 600;
+      color: var(--ink);
+      background: rgba(0, 0, 0, .07);
+      padding: 0 4px;
+      border-radius: 2px;
+    }
+
+    .btn-px {
+      height: 24px;
+      padding: 0 12px;
+      border: 1px solid var(--plat-shadow);
+      background: linear-gradient(180deg, #fdfdfb 0%, #f1eee2 50%, #d8d4c4 100%);
+      box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 var(--plat-3);
+      color: var(--ink);
+      font-family: var(--font-ui);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      line-height: 1;
+      border-radius: 2px;
+    }
+
+    .btn-px:hover {
+      background: linear-gradient(180deg, #fff 0%, #f5f3e8 50%, #ddd9ca 100%);
+    }
+
+    .btn-px:active {
+      background: linear-gradient(180deg, #c8c4b4 0%, #d8d4c4 50%, #e8e4d4 100%);
+      box-shadow: inset 1px 1px 0 var(--plat-3), inset -1px -1px 0 #fff;
+    }
+
+    .btn-px.default {
+      border: 1px solid var(--of-blue-deep);
+      background: linear-gradient(180deg, #5a8de8 0%, #2c5fb8 50%, #1d3f7d 100%);
+      box-shadow:
+        inset 1px 1px 0 #a5c2f0,
+        inset -1px -1px 0 #1d3f7d,
+        0 0 0 2px var(--paper),
+        0 0 0 3px var(--ink);
+      color: #fff;
+      text-shadow: 0 1px 0 rgba(0, 0, 0, .4);
+      margin-left: 4px;
+    }
+
+    .btn-px.default:hover {
+      background: linear-gradient(180deg, #6f9eef 0%, #3870c8 50%, #2c5fb8 100%);
+    }
+
+    .btn-px.default:active {
+      background: linear-gradient(180deg, #1d3f7d 0%, #2c5fb8 50%, #5a8de8 100%);
+    }
+
+    #status {
+      color: var(--good);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      margin-left: 6px;
+    }
+
+    .actions {
+      margin-top: 24px;
+      padding-top: 18px;
+      border-top: 1px dotted var(--rule);
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .theme-row {
+      display: flex;
+      gap: 14px;
+      margin-top: 4px;
+      flex-wrap: wrap;
+    }
+
+    .theme-opt {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--ink);
+      padding: 4px 8px;
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+      background: #fff;
+    }
+
+    .theme-opt:has(input:checked) {
+      border-color: var(--of-blue);
+      background: rgba(44, 95, 184, .06);
+    }
+
+    .theme-opt input[type=radio] {
+      margin: 0;
+    }
+
+    /* ─── Pale Sea theme overrides ─── */
+    body[data-theme="sea"] {
+      background-color: #d6e5ee;
+      background-image: none;
+    }
+
+    body[data-theme="sea"] .window {
+      background: #fff;
+      border: 1px solid #b8c8d2;
+      box-shadow: 0 4px 18px rgba(20, 50, 90, .10);
+    }
+
+    body[data-theme="sea"] .titlebar {
+      background: #2c8db8;
+      border-bottom: 1px solid #1e6488;
+      box-shadow: inset 0 -1px 0 #1e6488;
+      color: #fff;
+    }
+
+    body[data-theme="sea"] .titlebar .ttl {
+      background: transparent;
+      color: #fff;
+    }
+
+    body[data-theme="sea"] .titlebar .ttl .mark {
+      color: #fff;
+    }
+
+    body[data-theme="sea"] .titlebar .close-box,
+    body[data-theme="sea"] .titlebar .grow-box {
+      background: rgba(255, 255, 255, .25);
+      border: 1px solid rgba(255, 255, 255, .55);
+      box-shadow: none;
+    }
+
+    body[data-theme="sea"] .body {
+      background: #fff;
+    }
+
+    body[data-theme="sea"] textarea {
+      border: 1px solid #e0e8ed;
+      box-shadow: none;
+    }
+
+    body[data-theme="sea"] textarea:focus {
+      border-color: #2c8db8;
+      box-shadow: 0 0 0 2px rgba(44, 141, 184, .15);
+    }
+
+    body[data-theme="sea"] .btn-px {
+      background: #fff;
+      border: 1px solid #e0e8ed;
+      box-shadow: none;
+      color: #1a1a1a;
+    }
+
+    body[data-theme="sea"] .btn-px:hover {
+      background: #f3f7fa;
+      border-color: #b8c8d2;
+    }
+
+    body[data-theme="sea"] .btn-px:active {
+      background: #e8f1f6;
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, .08);
+    }
+
+    body[data-theme="sea"] .btn-px.default {
+      background: #2c8db8;
+      border: 1px solid #1e6488;
+      box-shadow: none;
+      color: #fff;
+      text-shadow: none;
+    }
+
+    body[data-theme="sea"] .btn-px.default:hover {
+      background: #3098c4;
+    }
+
+    body[data-theme="sea"] .btn-px.default:active {
+      background: #1e6488;
+    }
+
+    body[data-theme="sea"] p.hint em {
+      background: #e8f1f6;
+    }
+
+    body[data-theme="sea"] .theme-opt:has(input:checked) {
+      border-color: #2c8db8;
+      background: #e8f1f6;
+    }
+
+    body[data-theme="sea"] .actions {
+      border-top: 1px solid #e0e8ed;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="window">
+    <div class="titlebar">
+      <div class="close-box"></div>
+      <div class="ttl"><span class="mark">◎</span>OmniFocus Tab Saver — Settings</div>
+      <div class="grow-box"></div>
+    </div>
+    <div class="body">
+      <h1>Settings</h1>
+      <p class="sub">List the OmniFocus projects and tags you use most. They appear as a dropdown / chips in the popup.
+        Names must match OmniFocus exactly (case sensitive). Leave blank to skip that field in the popup. <strong>Sync
+          requires OmniFocus Pro</strong> (uses the omnijs-run URL action).</p>
+
+      <label>Theme</label>
+      <div class="theme-row">
+        <label class="theme-opt">
+          <input type="radio" name="theme" value="classic" />
+          <span>Classic (System 7)</span>
+        </label>
+        <label class="theme-opt">
+          <input type="radio" name="theme" value="sea" />
+          <span>Pale Sea</span>
+        </label>
+      </div>
+
+      <label for="projects">Projects <span class="hint">one per line — first is default</span></label>
+      <textarea id="projects" placeholder="Inbox-Triage&#10;Read Later&#10;Reference"></textarea>
+      <div class="row">
+        <button id="syncProjects" class="btn-px" type="button">1. Run sync in OmniFocus</button>
+        <button id="pasteProjects" class="btn-px" type="button">2. Paste from clipboard</button>
+      </div>
+      <p class="hint">Click <em>1</em> → approve script in OmniFocus → Run Script → switch back to Chrome → click <em>2</em>.</p>
+
+      <label for="tags">Tags <span class="hint">one per line</span></label>
+      <textarea id="tags" placeholder="read-later&#10;research&#10;work&#10;personal"></textarea>
+      <div class="row">
+        <button id="syncTags" class="btn-px" type="button">1. Run sync in OmniFocus</button>
+        <button id="pasteTags" class="btn-px" type="button">2. Paste from clipboard</button>
+      </div>
+
+      <div class="actions">
+        <button id="save" class="btn-px default" type="button">Save</button>
+        <button id="reset" class="btn-px" type="button">Reset</button>
+        <span id="status"></span>
+      </div>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+
+</html>

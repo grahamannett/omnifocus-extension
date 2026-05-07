@@ -35,3 +35,5 @@ Thumbs.db
 *.swp
 # Cursor AI rules files
 **/.cursor/rules
+
+.claude/settings.local.json

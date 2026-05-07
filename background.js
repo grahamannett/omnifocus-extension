@@ -84,32 +84,58 @@ async function warmupSummarizer() {
   }
 }
 
-async function addToOmniFocus(tab, { llmEnabled }) {
-  if (!tab?.url) throw new Error("No active tab")
-  log.info("addToOmniFocus", { url: tab.url, llmEnabled })
+function buildOmnifocusUrl({ name, note, project, tags, flag, due }) {
+  // Manual encoding (not URLSearchParams) because OmniFocus's URL parser treats
+  // `+` as a literal character; we need spaces encoded as %20 (RFC 3986).
+  const enc = encodeURIComponent
+  const parts = [`name=${enc(name || "")}`, `note=${enc(note || "")}`]
+  if (project) parts.push(`project=${enc(project)}`)
+  if (tags && tags.length) parts.push(`tags=${enc(tags.join(","))}`)
+  if (flag) parts.push("flag=true")
+  if (due) parts.push(`due=${enc(due)}`)
+  return `omnifocus:///add?${parts.join("&")}`
+}
 
-  let note = tab.url
+async function summarizeTab(tabId) {
+  const tab = await chrome.tabs.get(tabId)
+  const text = await getTabText(tab)
+  return withTimeout(summarizeViaOffscreen(text), SUMMARY_TIMEOUT_MS, "summarize")
+}
+
+async function addToOmniFocus(tab, opts) {
+  if (!tab?.url) throw new Error("No active tab")
+  const { llmEnabled, customTitle, customNote, project, tags, flag, due } = opts
+  log.info("addToOmniFocus", { url: tab.url, llmEnabled, project, tags, flag, due, hasCustomNote: customNote != null })
+
+  const name = customTitle != null && customTitle.length > 0 ? customTitle : tab.title || ""
+
+  let note
   let summarySkipped = false
   let skipReason = null
 
-  if (llmEnabled) {
-    try {
-      const text = await getTabText(tab)
-      const summary = await withTimeout(summarizeViaOffscreen(text), SUMMARY_TIMEOUT_MS, "summarize")
-      if (summary) {
-        note = `${tab.url}\n\n${summary}`
-      } else {
+  if (customNote != null) {
+    // Popup pre-built the note; trust it.
+    note = customNote
+  } else {
+    note = tab.url
+    if (llmEnabled) {
+      try {
+        const summary = await summarizeTab(tab.id)
+        if (summary) {
+          note = `${tab.url}\n\n${summary}`
+        } else {
+          summarySkipped = true
+          skipReason = "empty summary"
+        }
+      } catch (err) {
         summarySkipped = true
-        skipReason = "empty summary"
+        skipReason = err.message
+        log.warn("summary skipped:", err.message)
       }
-    } catch (err) {
-      summarySkipped = true
-      skipReason = err.message
-      log.warn("summary skipped:", err.message)
     }
   }
 
-  const url = `omnifocus:///add?name=${encodeURIComponent(tab.title || "")}&note=${encodeURIComponent(note)}`
+  const url = buildOmnifocusUrl({ name, note, project, tags, flag, due })
 
   log.info("opening omnifocus URL:", url)
   const newTab = await chrome.tabs.create({ url, active: true })
@@ -119,13 +145,13 @@ async function addToOmniFocus(tab, { llmEnabled }) {
   return { summarySkipped, skipReason }
 }
 
-async function handleSave({ llmEnabled }) {
+async function handleSave(opts) {
   const [tab] = await chrome.tabs.query({
     active: true,
     currentWindow: true,
   })
   if (!tab) throw new Error("No active tab")
-  return addToOmniFocus(tab, { llmEnabled })
+  return addToOmniFocus(tab, opts)
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -133,10 +159,33 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.target === "offscreen" || msg?.target === "popup") return
 
   if (msg?.action === "addToOmnifocus") {
-    handleSave({ llmEnabled: !!msg.llmEnabled })
+    handleSave({
+      llmEnabled: !!msg.llmEnabled,
+      customTitle: typeof msg.customTitle === "string" ? msg.customTitle : null,
+      customNote: typeof msg.customNote === "string" ? msg.customNote : null,
+      project: msg.project ?? null,
+      tags: Array.isArray(msg.tags) ? msg.tags : [],
+      flag: !!msg.flag,
+      due: msg.due ?? null,
+    })
       .then(({ summarySkipped, skipReason }) => sendResponse({ success: true, summarySkipped, reason: skipReason }))
       .catch((err) => {
         log.error(err)
+        sendResponse({ success: false, error: err.message })
+      })
+    return true
+  }
+
+  if (msg?.action === "summarize") {
+    const tabId = msg.tabId
+    if (!tabId) {
+      sendResponse({ success: false, error: "no tabId" })
+      return false
+    }
+    summarizeTab(tabId)
+      .then((summary) => sendResponse({ success: true, summary: summary || "" }))
+      .catch((err) => {
+        log.warn("summarize failed:", err.message)
         sendResponse({ success: false, error: err.message })
       })
     return true
