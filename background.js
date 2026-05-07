@@ -1,335 +1,180 @@
-const extOpts = {
-  // todo: make the options part of configurable settings in popup
-  aiReady: (() => {
-    if (
-      !("Summarizer" in self) ||
-      !("LanguageModel" in self) ||
-      !("Rewriter" in self)
-    ) {
-      console.log("ai not ready!!!");
-      return false;
-    }
-    console.log("ai ready!!!");
-    return true;
-  })(),
-  timeout: 7000,
-  summaryEnabled: true,
-  debug: true,
-  minLength: 50,
-  summaryFn: getPromptSummary,
-};
+const SUMMARY_TIMEOUT_MS = 60000
+const MIN_TEXT_LEN = 50
+const MAX_TEXT_LEN = 8000
+const OFFSCREEN_URL = "offscreen.html"
+const _PRE = "of-ext"
 
-const ModelHelpers = {
-  Summarizer: {
-    options: {
-      sharedContext: "Generate a single sentence summary of the following text",
-      type: "headline", // Options: headline, key-points, tl;dr, teaser
-      format: "markdown", // Options: markdown, plain-text
-      length: "short", // Options: short, medium, long
-    },
-  },
-  LanguageModel: {
-    options: {
-      temperature: 0.7,
-      topK: 40,
-      initialPrompts: [
-        {
-          role: "system",
-          content: "Generate a single sentence summary of the following text.",
-        },
-      ],
-    },
-  },
-};
-
-// Minimal logger
-const log = (() => {
-  const fmt =
-    (level, color) =>
-    (...args) =>
-      console[level === "debug" ? "log" : level](
-        `%c[${new Date().toTimeString().slice(0, 8)}][${level.toUpperCase()}]`,
-        `color:${color}`,
-        ...args
-      );
-  return {
-    debug: extOpts.debug ? fmt("debug", "#888") : () => {},
-    info: fmt("info", "#0c5"),
-    warn: fmt("warn", "#f90"),
-    error: fmt("error", "#f43"),
-  };
-})();
-
-/**
- * Wraps a promise with a timeout
- * @param {Promise} promise - The promise to wrap
- * @param {number} duration - Timeout in milliseconds
- * @param {string} message - Custom error message
- * @returns {Promise} - A promise that will reject if the timeout occurs
- */
-async function withTimeout(promise, duration, message) {
-  const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(
-      () => reject(new Error(message || `Timed out after ${duration}ms`)),
-      duration
-    );
-  });
-
-  return Promise.race([promise, timeoutPromise]);
+const log = {
+  info: (...a) => console.log(`[${_PRE}]`, ...a),
+  warn: (...a) => console.warn(`[${_PRE}]`, ...a),
+  error: (...a) => console.error(`[${_PRE}]`, ...a),
 }
 
-/**
- * Extracts the main text content from a tab
- * @param {chrome.tabs.Tab} tab - The browser tab to extract content from
- * @returns {string} The text content of the main article or body
- */
-async function getTextContent(tab) {
-  const [textResult] = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    function: () => {
-      const article =
-        document.querySelector("article") ||
-        document.querySelector("main") ||
-        document.body;
-      return article.innerText.trim();
-    },
-  });
-  return textResult.result;
-}
-
-/**
- * Extracts the full HTML content from a tab
- * @param {chrome.tabs.Tab} tab - The browser tab to extract HTML from
- * @returns {string} The full HTML content of the page
- */
-async function getHtmlContent(tab) {
-  const [htmlResult] = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    function: () => document.documentElement.innerHTML,
-  });
-  return htmlResult.result;
-}
-
-/**
- * Generates a summary of provided text using Chrome's AI API
- * @param {string} longText - The text to summarize
- * @returns {Promise<string>} A summary of the text
- * @throws {Error} If AI summarization fails
- */
-async function getSummarizerSummary(longText) {
-  /**
-   from some testing, it seems that the prompt is better than the summarizer
-   --
-   sharedContext: Additional shared context that can help the summarizer.
-   type: The type of the summarization, with the allowed values key-points (default), tl;dr, teaser, and headline.
-   format: The format of the summarization, with the allowed values markdown (default), and plain-text.
-   length: The length of the summarization, with the allowed values short, medium (default), and long. The meanings of these
-   lengths vary depending on the type requested. For example, in Chrome's implementation, a short key-points summary consists
-   of three bullet points, and a short summary is one sentence; a long key-points summary is seven bullet points, and a long summary is a paragraph.
-  **/
-
-  // check if text is too short
-  if (longText.length < extOpts.minLength) return "";
-
-  const summarizer = await Summarizer.create({
-    sharedContext: "Generate a single sentence summary of the following text",
-    type: "headline", // Options: headline, key-points, tl;dr, teaser
-    format: "markdown", // Options: markdown, plain-text
-    length: "short", // Options: short, medium, long
-  });
-
-  return await summarizer.summarize(longText);
-}
-
-async function getPromptSummary(longText) {
-  // const initialPrompt =
-  const session = await LanguageModel.create({
-    temperature: 0.7,
-    topK: 40,
-    initialPrompts: [
-      {
-        role: "system",
-        content: "Generate a single sentence summary of the following text.",
-      },
-    ],
-  });
-
-  const prompt = await session.prompt(longText);
-  return prompt;
-}
-
-/**
- * Adds the current tab to OmniFocus with optional AI summary
- * @param {chrome.tabs.Tab} tab - The browser tab to add to OmniFocus
- * @returns {Promise<void>}
- */
-async function addToOmniFocus(tab, { llmEnabled = true } = {}) {
-  if (!tab || !tab.url) throw new Error("Invalid tab provided");
-
-  let noteContent = tab.url;
-  log.info(`adding to of:{AI:${llmEnabled},Fn:${extOpts.summaryFn.name}}`);
-
-  if (llmEnabled && extOpts.summaryEnabled && extOpts.aiReady) {
-    try {
-      const pageText = await getTextContent(tab);
-      const summary = await withTimeout(
-        extOpts.summaryFn(pageText),
-        extOpts.timeout,
-        `Summary for ${tab.url}`
-      );
-      if (summary) noteContent = `${tab.url}\n\n${summary}`;
-    } catch (err) {
-      log.error(`Timeout`, err);
-    }
-  }
-
-  const item = {
-    name: encodeURIComponent(tab.title),
-    note: encodeURIComponent(noteContent),
-  };
-
+async function withTimeout(promise, ms, label) {
+  let timer
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms)
+  })
   try {
-    const omnifocusUrl = `omnifocus:///add?name=${item.name}&note=${item.note}`;
-
-    chrome.tabs.create({ url: omnifocusUrl, active: false }, (newTab) => {
-      setTimeout(() => chrome.tabs.remove(newTab.id), 500);
-    });
-  } catch (error) {
-    log.error("Failed to create OmniFocus task:", error);
+    return await Promise.race([promise, timeout])
+  } finally {
+    clearTimeout(timer)
   }
 }
 
-const handlers = {
-  addToOmnifocusPopupNoSummary: () => {
-    return new Promise((resolve, reject) => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (!tabs || !tabs[0]) {
-          reject(new Error("No active tab found"));
-          return;
-        }
-        addToOmniFocus(tabs[0], { llmEnabled: false })
-          .then(resolve)
-          .catch(reject);
-      });
-    });
-  },
-  addToOmnifocusPopupSummary: () => {
-    return new Promise((resolve, reject) => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (!tabs || !tabs[0]) {
-          reject(new Error("No active tab found"));
-          return;
-        }
-        addToOmniFocus(tabs[0], { llmEnabled: true })
-          .then(resolve)
-          .catch(reject);
-      });
-    });
-  },
-  openPopup: () => chrome.action.setPopup({ popup: "popup.html" }),
-};
-
-console.log("background.js loaded");
-
-// Main message listener with dispatch pattern
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  const { action } = message;
-
-  if (handlers[action]) {
-    // Keep the message channel open for the async response
-    handlers[action]()
-      .then(() => {
-        sendResponse({ success: true });
-        chrome.action.setPopup({ popup: "" });
-      })
-      .catch((error) => {
-        log.error("Failed to add to OmniFocus:", error);
-        sendResponse({ success: false, error: error.message });
-      });
-    return true; // Keep message channel open
-  }
-
-  // Handle unknown action
-  sendResponse({ success: false, error: `Unknown action: ${action}` });
-  return false;
-});
-
-// Handle direct clicks (when popup is not shown)
-chrome.action.onClicked.addListener((tab) => {
-  handlers.openPopup();
-});
-
-// Listen for keyboard shortcuts
-chrome.commands.onCommand.addListener((command) => {
-  if (handlers[command]) {
-    handlers[command]();
-  }
-});
-
-async function getAISummary11(longText) {
-  if (!("Summarizer" in self)) {
-    throw new Error("Summarizer API not supported");
-  }
-
-  // check if text is too short
-  if (longText.length < extOpts.minLength) {
-    log.info("Text too short for summary, skipping.");
-    return "";
-  }
-
-  const options = {
-    sharedContext: "Generate a single sentence summary of the following text",
-    type: "headline", // Options: headline, key-points, tldr, teaser
-    format: "markdown", // Options: markdown, plain-text
-    length: "short", // Options: short, medium, long
-  };
-
-  const availability = await self.Summarizer.availability(options);
-  if (availability === "unavailable") {
-    throw new Error("Summarizer is not available with the given options.");
-  }
-
-  if (availability === "downloading" || availability === "downloadable") {
-    log.info("Summarizer model requires download, this might take a moment...");
-  }
-
-  const summarizer = await self.Summarizer.create({
-    ...options,
-    monitor(m) {
-      m.addEventListener("downloadprogress", (e) => {
-        log.info(
-          `Downloading summarizer model: ${Math.round(e.loaded * 100)}%`
-        );
-      });
+async function getTabText(tab) {
+  const [r] = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const root = document.querySelector("article") || document.querySelector("main") || document.body
+      return root ? root.innerText.trim() : ""
     },
-  });
-
-  return await summarizer.summarize(longText);
+  })
+  return r?.result ?? ""
 }
 
-function addToOmnifocusWithSummary11() {
-  return new Promise((resolve, reject) => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (!tabs || !tabs[0]) {
-        return reject(new Error("No active tab found"));
+let creatingOffscreen = null
+async function ensureOffscreen() {
+  if (await chrome.offscreen.hasDocument()) return
+  if (creatingOffscreen) return creatingOffscreen
+  creatingOffscreen = chrome.offscreen
+    .createDocument({
+      url: OFFSCREEN_URL,
+      reasons: ["DOM_PARSER"],
+      justification: "Run Chrome's Summarizer API which requires a DOM context.",
+    })
+    .catch((err) => {
+      if (/single offscreen document/i.test(err?.message || "")) return
+      throw err
+    })
+  try {
+    await creatingOffscreen
+  } finally {
+    creatingOffscreen = null
+  }
+}
+
+async function summarizeViaOffscreen(text) {
+  if (!text || text.length < MIN_TEXT_LEN) {
+    throw new Error("text too short")
+  }
+  const truncated = text.length > MAX_TEXT_LEN ? text.slice(0, MAX_TEXT_LEN) : text
+  await ensureOffscreen()
+  const resp = await chrome.runtime.sendMessage({
+    target: "offscreen",
+    action: "summarize",
+    text: truncated,
+  })
+  if (!resp?.ok) throw new Error(resp?.error || "summarize failed")
+  return resp.summary || ""
+}
+
+async function warmupSummarizer() {
+  try {
+    await ensureOffscreen()
+    const resp = await chrome.runtime.sendMessage({
+      target: "offscreen",
+      action: "warmup",
+    })
+    log.info("warmup:", resp)
+    return resp
+  } catch (err) {
+    log.warn("warmup failed:", err.message)
+    return { ok: false, error: err.message }
+  }
+}
+
+async function addToOmniFocus(tab, { llmEnabled }) {
+  if (!tab?.url) throw new Error("No active tab")
+  log.info("addToOmniFocus", { url: tab.url, llmEnabled })
+
+  let note = tab.url
+  let summarySkipped = false
+  let skipReason = null
+
+  if (llmEnabled) {
+    try {
+      const text = await getTabText(tab)
+      const summary = await withTimeout(summarizeViaOffscreen(text), SUMMARY_TIMEOUT_MS, "summarize")
+      if (summary) {
+        note = `${tab.url}\n\n${summary}`
+      } else {
+        summarySkipped = true
+        skipReason = "empty summary"
       }
-      addToOmniFocus(tabs[0], { llmEnabled: true }).then(resolve).catch(reject);
-    });
-  });
+    } catch (err) {
+      summarySkipped = true
+      skipReason = err.message
+      log.warn("summary skipped:", err.message)
+    }
+  }
+
+  const url = `omnifocus:///add?name=${encodeURIComponent(tab.title || "")}&note=${encodeURIComponent(note)}`
+
+  log.info("opening omnifocus URL:", url)
+  const newTab = await chrome.tabs.create({ url, active: true })
+  log.info("opened tab", newTab.id)
+  log.info("done")
+
+  return { summarySkipped, skipReason }
 }
 
-// Handle direct clicks on the extension icon
-// chrome.action.onClicked.addListener((tab) => {
-//   addToOmnifocusWithSummary().catch((error) => {
-//     log.error("Failed to add to OmniFocus:", error);
-//   });
-// });
+async function handleSave({ llmEnabled }) {
+  const [tab] = await chrome.tabs.query({
+    active: true,
+    currentWindow: true,
+  })
+  if (!tab) throw new Error("No active tab")
+  return addToOmniFocus(tab, { llmEnabled })
+}
 
-// // Listen for keyboard shortcuts
-// chrome.commands.onCommand.addListener((command) => {
-//   if (command === "addToOmnifocusPopupSummary") {
-//     addToOmnifocusWithSummary().catch((error) => {
-//       log.error("Failed to add to OmniFocus from command:", error);
-//     });
-//   }
-// });
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  // Ignore messages destined for other endpoints.
+  if (msg?.target === "offscreen" || msg?.target === "popup") return
+
+  if (msg?.action === "addToOmnifocus") {
+    handleSave({ llmEnabled: !!msg.llmEnabled })
+      .then(({ summarySkipped, skipReason }) => sendResponse({ success: true, summarySkipped, reason: skipReason }))
+      .catch((err) => {
+        log.error(err)
+        sendResponse({ success: false, error: err.message })
+      })
+    return true
+  }
+
+  if (msg?.action === "checkAvailability") {
+    warmupSummarizer()
+      .then((resp) =>
+        sendResponse({
+          success: true,
+          availability: resp?.availability ?? "unavailable",
+        }),
+      )
+      .catch((err) => sendResponse({ success: false, error: err.message }))
+    return true
+  }
+
+  sendResponse({ success: false, error: `Unknown action: ${msg?.action}` })
+  return false
+})
+
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command !== "addToOmnifocusPopupSummary") return
+  try {
+    await handleSave({ llmEnabled: true })
+  } catch (err) {
+    log.error("command failed:", err)
+  }
+})
+
+chrome.runtime.onInstalled.addListener(() => {
+  log.info("onInstalled — kicking warmup")
+  warmupSummarizer()
+})
+
+chrome.runtime.onStartup.addListener(() => {
+  log.info("onStartup — kicking warmup")
+  warmupSummarizer()
+})
+
+console.log("[of-ext] background loaded")
