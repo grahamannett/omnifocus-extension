@@ -13,11 +13,19 @@ const SYNC_SENTINEL = "##OFSYNC:"
 
 let pendingSync = null // 'projects' | 'tags' | null
 
+// Matches the sync sentinel for either kind, with either a real newline or
+// the legacy literal "\n" form.
+const SENTINEL_ANY_RE = new RegExp(`^${SYNC_SENTINEL}(?:projects|tags)##(?:\\\\n|\\n)`)
+
+function stripAnySentinel(text) {
+  return text.replace(SENTINEL_ANY_RE, "")
+}
+
 function parseList(text) {
-  return text
+  return stripAnySentinel(text)
     .split("\n")
     .map((s) => s.trim())
-    .filter(Boolean)
+    .filter((s) => s && !SENTINEL_ANY_RE.test(s + "\n"))
 }
 
 function flash(msg, ok = true) {
@@ -140,6 +148,22 @@ for (const r of themeRadios) {
     if (r.checked) setTheme(r.value)
   })
 }
+
+function handleManualPaste(e) {
+  const pasted = e.clipboardData?.getData("text") ?? ""
+  if (!SENTINEL_ANY_RE.test(pasted)) return
+  e.preventDefault()
+  const cleaned = stripAnySentinel(pasted).trim()
+  const ta = e.currentTarget
+  const start = ta.selectionStart
+  const end = ta.selectionEnd
+  ta.value = ta.value.slice(0, start) + cleaned + ta.value.slice(end)
+  const caret = start + cleaned.length
+  ta.setSelectionRange(caret, caret)
+}
+
+projectsEl.addEventListener("paste", handleManualPaste)
+tagsEl.addEventListener("paste", handleManualPaste)
 
 window.addEventListener("focus", tryAutoPasteOnFocus)
 
