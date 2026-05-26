@@ -8,6 +8,7 @@ const syncTagsBtn = document.getElementById("syncTags")
 const pasteProjectsBtn = document.getElementById("pasteProjects")
 const pasteTagsBtn = document.getElementById("pasteTags")
 const themeRadios = Array.from(document.querySelectorAll('input[name="theme"]'))
+const suggestMetaEl = document.getElementById("suggestMeta")
 
 const SYNC_SENTINEL = "##OFSYNC:"
 
@@ -35,11 +36,17 @@ function flash(msg, ok = true) {
 }
 
 async function load() {
-  const { projects = [], tags = [], theme = "classic" } = await chrome.storage.sync.get(["projects", "tags", "theme"])
+  const {
+    projects = [],
+    tags = [],
+    theme = "classic",
+    suggestMeta = true,
+  } = await chrome.storage.sync.get(["projects", "tags", "theme", "suggestMeta"])
   projectsEl.value = projects.join("\n")
   tagsEl.value = tags.join("\n")
   applyTheme(theme)
   for (const r of themeRadios) r.checked = r.value === theme
+  suggestMetaEl.checked = suggestMeta
 }
 
 function applyTheme(theme) {
@@ -148,6 +155,11 @@ for (const r of themeRadios) {
     if (r.checked) setTheme(r.value)
   })
 }
+
+suggestMetaEl.addEventListener("change", async () => {
+  await chrome.storage.sync.set({ suggestMeta: suggestMetaEl.checked })
+  flash(suggestMetaEl.checked ? "AI suggestions on" : "AI suggestions off")
+})
 
 function handleManualPaste(e) {
   const pasted = e.clipboardData?.getData("text") ?? ""

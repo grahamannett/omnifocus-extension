@@ -1,6 +1,7 @@
 const SUMMARY_TIMEOUT_MS = 60000
 const MIN_TEXT_LEN = 50
 const MAX_TEXT_LEN = 8000
+const MAX_CLASSIFY_LEN = 4000
 const OFFSCREEN_URL = "offscreen.html"
 const _PRE = "of-ext"
 
@@ -69,6 +70,21 @@ async function summarizeViaOffscreen(text) {
   return resp.summary || ""
 }
 
+async function classifyViaOffscreen(text, meta) {
+  await ensureOffscreen()
+  const resp = await chrome.runtime.sendMessage({
+    target: "offscreen",
+    action: "classify",
+    text,
+    title: meta.title,
+    url: meta.url,
+    projects: meta.projects,
+    tags: meta.tags,
+  })
+  if (!resp?.ok) throw new Error(resp?.error || "classify failed")
+  return { project: resp.project || "", tags: Array.isArray(resp.tags) ? resp.tags : [] }
+}
+
 async function warmupSummarizer() {
   try {
     await ensureOffscreen()
@@ -100,6 +116,23 @@ async function summarizeTab(tabId) {
   const tab = await chrome.tabs.get(tabId)
   const text = await getTabText(tab)
   return withTimeout(summarizeViaOffscreen(text), SUMMARY_TIMEOUT_MS, "summarize")
+}
+
+async function suggestMetaForTab(tabId) {
+  const tab = await chrome.tabs.get(tabId)
+  const { projects = [], tags = [] } = await chrome.storage.sync.get(["projects", "tags"])
+  // Nothing configured to suggest from → straight to Inbox, no inference.
+  if (!projects.length && !tags.length) return { project: "", tags: [] }
+
+  const text = await getTabText(tab)
+  if (!text || text.length < MIN_TEXT_LEN) return { project: "", tags: [] }
+  const truncated = text.length > MAX_CLASSIFY_LEN ? text.slice(0, MAX_CLASSIFY_LEN) : text
+
+  return withTimeout(
+    classifyViaOffscreen(truncated, { title: tab.title || "", url: tab.url || "", projects, tags }),
+    SUMMARY_TIMEOUT_MS,
+    "classify",
+  )
 }
 
 async function addToOmniFocus(tab, opts) {
@@ -186,6 +219,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       .then((summary) => sendResponse({ success: true, summary: summary || "" }))
       .catch((err) => {
         log.warn("summarize failed:", err.message)
+        sendResponse({ success: false, error: err.message })
+      })
+    return true
+  }
+
+  if (msg?.action === "suggestMeta") {
+    const tabId = msg.tabId
+    if (!tabId) {
+      sendResponse({ success: false, error: "no tabId" })
+      return false
+    }
+    suggestMetaForTab(tabId)
+      .then(({ project, tags }) => sendResponse({ success: true, project, tags }))
+      .catch((err) => {
+        log.warn("suggestMeta failed:", err.message)
         sendResponse({ success: false, error: err.message })
       })
     return true

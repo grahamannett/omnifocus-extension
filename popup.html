@@ -290,6 +290,54 @@
             color: #ffd76a;
         }
 
+        /* ── AI suggestion chips: small beveled buttons you click to apply ── */
+        /* The chips are the click targets, so suppress the row-level blue hover
+           (which otherwise left dark chip text unreadable on a blue field). */
+        #suggestRow:hover {
+            background: transparent;
+        }
+
+        #suggestRow:hover .lbl {
+            color: var(--ink-3);
+        }
+
+        .meta-row .val .tag.suggest {
+            color: var(--ink);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            cursor: pointer;
+            border: 1px solid var(--plat-shadow);
+            border-radius: 2px;
+            padding: 1px 7px;
+            background: linear-gradient(180deg, #fdfdfb 0%, #f1eee2 50%, #d8d4c4 100%);
+            box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 var(--plat-3);
+        }
+
+        .meta-row .val .tag.suggest::before {
+            content: none;
+        }
+
+        .meta-row .val .tag.suggest .at {
+            color: var(--of-blue);
+            font-weight: 600;
+        }
+
+        .meta-row .val .tag.suggest:hover {
+            background: var(--of-blue);
+            border-color: var(--of-blue-deep);
+            color: #fff;
+            box-shadow: inset 1px 1px 0 var(--of-blue-2);
+        }
+
+        .meta-row .val .tag.suggest:hover .at {
+            color: #ffd76a;
+        }
+
+        .meta-row .val .tag.suggest:active {
+            background: linear-gradient(180deg, #1d3f7d 0%, #2c5fb8 50%, #5a8de8 100%);
+            color: #fff;
+        }
+
         .tag-add {
             border: 0;
             background: transparent;
@@ -694,6 +742,28 @@
             color: #2c8db8;
         }
 
+        body[data-theme="sea"] .meta-row .val .tag.suggest {
+            border: 1px solid #e0e8ed;
+            background: #fff;
+            box-shadow: none;
+            color: #1a1a1a;
+        }
+
+        body[data-theme="sea"] .meta-row .val .tag.suggest .at {
+            color: #2c8db8;
+        }
+
+        body[data-theme="sea"] .meta-row .val .tag.suggest:hover {
+            background: #2c8db8;
+            border-color: #1e6488;
+            color: #fff;
+            box-shadow: none;
+        }
+
+        body[data-theme="sea"] .meta-row .val .tag.suggest:hover .at {
+            color: #fff;
+        }
+
         body[data-theme="sea"] .meta-row .val .flag-on {
             color: #d96a1f;
         }
@@ -850,6 +920,10 @@
                     <option value="">Add tag…</option>
                 </select>
             </div>
+        </div>
+        <div class="meta-row hidden" id="suggestRow">
+            <div class="lbl">suggest</div>
+            <div class="val" id="suggestVal"></div>
         </div>
         <div class="meta-row" id="whenRow">
             <div class="lbl">when</div>

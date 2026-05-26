@@ -6,6 +6,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const projectSelect = document.getElementById("project")
   const tagsRow = document.getElementById("tagsRow")
   const tagsContainer = document.getElementById("tags")
+  const suggestRow = document.getElementById("suggestRow")
+  const suggestVal = document.getElementById("suggestVal")
   const flagBtn = document.getElementById("flag")
   const dueBtns = Array.from(document.querySelectorAll("button.preset[data-due]"))
   const noteLabelEl = document.getElementById("noteLabel")
@@ -101,7 +103,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   titleEl.addEventListener("input", () => autoSizeTextarea(titleEl))
 
   // ── projects + tags from settings ──
-  const { projects = [], tags = [] } = await chrome.storage.sync.get(["projects", "tags"])
+  const { projects = [], tags = [], suggestMeta = true } = await chrome.storage.sync.get([
+    "projects",
+    "tags",
+    "suggestMeta",
+  ])
 
   if (projects.length) {
     projectRow.classList.remove("hidden")
@@ -230,6 +236,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   noteEl.addEventListener("input", () => autoSizeTextarea(noteEl))
 
+  // ── AI project/tag suggestions (parallel with summary; never auto-applies) ──
+  if (suggestMeta && (projects.length || availableTags.length)) {
+    chrome.runtime.sendMessage({ action: "suggestMeta", tabId: tab.id }, (resp) => {
+      if (chrome.runtime.lastError || !resp?.success) return // silent degrade, like summary
+      renderSuggestions(resp.project, resp.tags)
+    })
+  }
+
   // ── helpers ──
   function autoSizeTextarea(el) {
     el.style.height = "auto"
@@ -243,6 +257,55 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   function selectedTags() {
     return pickedTags.slice()
+  }
+
+  // Render AI suggestions as dashed "offer" chips. Nothing is applied until the
+  // user clicks; an unclicked chip is simply ignored (save still goes to Inbox).
+  function renderSuggestions(suggProject, suggTags) {
+    suggestVal.innerHTML = ""
+
+    const hideIfEmpty = () => {
+      if (!suggestVal.children.length) suggestRow.classList.add("hidden")
+    }
+
+    // At most one project, and only if it's a real configured project.
+    if (suggProject && projects.includes(suggProject)) {
+      const chip = document.createElement("button")
+      chip.type = "button"
+      chip.className = "tag suggest"
+      chip.textContent = suggProject
+      chip.title = "Click to set project"
+      chip.addEventListener("click", () => {
+        projectSelect.value = suggProject
+        projectRow.classList.remove("hidden")
+        chip.remove()
+        hideIfEmpty()
+      })
+      suggestVal.appendChild(chip)
+    }
+
+    // Tags the model picked that exist and aren't already chosen.
+    for (const t of Array.isArray(suggTags) ? suggTags : []) {
+      if (!availableTags.includes(t) || pickedTags.includes(t)) continue
+      const chip = document.createElement("button")
+      chip.type = "button"
+      chip.className = "tag suggest"
+      const at = document.createElement("span")
+      at.className = "at"
+      at.textContent = "@"
+      chip.append(at, t)
+      chip.title = "Click to add tag"
+      chip.addEventListener("click", () => {
+        if (!pickedTags.includes(t)) pickedTags.push(t)
+        tagsRow.classList.remove("hidden")
+        renderTagPicker()
+        chip.remove()
+        hideIfEmpty()
+      })
+      suggestVal.appendChild(chip)
+    }
+
+    if (suggestVal.children.length) suggestRow.classList.remove("hidden")
   }
 
   function selectedDue() {

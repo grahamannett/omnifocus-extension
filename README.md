@@ -22,6 +22,7 @@ Some of these features are currently still experimental and may require addition
 - Adds the current tab's title and URL to your OmniFocus inbox with one click
 - Supports both direct adding and popup interface
 - Automatically includes AI-generated summary when Chrome AI is available
+- Suggests a matching project and tags (click to apply) from your configured lists
 - Command/Ctrl+click to show the popup interface
 - Keyboard shortcuts for quick task addition
 - Cleanly handles OmniFocus URL scheme (no leftover tabs)
@@ -54,6 +55,16 @@ This extension supports Chrome's AI features to generate a one-line summary of w
 - The summary is included in the OmniFocus note field along with the URL
 - The popup interface shows whether AI summarization is available
 - If AI is not available, the extension falls back to only including the URL
+
+## AI Project & Tag Suggestions
+
+When Chrome's Prompt API (Gemini Nano) is available, the popup also suggests where to file the page:
+
+- On open, it classifies the page against the projects and tags you configure in Settings — running on-device, in parallel with the summary
+- Suggestions appear as click-to-apply chips in a "suggest" row; nothing is selected until you click, so the default stays your Inbox
+- Output is restricted to your exact project/tag names. If nothing is a strong match, no project is suggested and the task goes to the Inbox
+- Toggle it off anytime via Settings → "Suggest project & tags with AI"
+- The direct-add shortcut (no popup) always files straight to the Inbox — suggestions are popup-only
 
 ## Related Docs
 
