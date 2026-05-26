@@ -37,3 +37,4 @@ Thumbs.db
 **/.cursor/rules
 
 .claude/settings.local.json
+.claude/worktrees/
