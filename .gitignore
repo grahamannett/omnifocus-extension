@@ -26,6 +26,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Summary lab exports contain captured page text and source URLs
+summary-lab-results*.json
+
 # Environment variables
 .env
 .env.local

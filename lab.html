@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Summary Lab — OmniFocus Tab Saver</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        background: #f3f2eb;
+        color: #1a1a1a;
+        padding: 24px;
+        max-width: 1100px;
+      }
+      h1 {
+        font-size: 18px;
+        margin-bottom: 4px;
+      }
+      .sub {
+        color: #6c6650;
+        font-size: 12px;
+        margin-bottom: 16px;
+      }
+      #avail {
+        font-size: 12px;
+        margin-bottom: 16px;
+      }
+      #avail .ok {
+        color: #1d6b2f;
+        font-weight: 700;
+      }
+      #avail .bad {
+        color: #a32b1e;
+        font-weight: 700;
+      }
+      textarea {
+        width: 100%;
+        min-height: 140px;
+        font: inherit;
+        font-size: 12px;
+        padding: 8px;
+        border: 1px solid #8a8576;
+        background: #fff;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        margin: 12px 0;
+        align-items: center;
+      }
+      button {
+        font: inherit;
+        font-size: 12px;
+        padding: 6px 14px;
+        border: 1px solid #4a4538;
+        background: #faf8f0;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      button.primary {
+        background: #2c5fb8;
+        border-color: #1d3f7d;
+        color: #fff;
+        font-weight: 700;
+      }
+      #status {
+        font-size: 12px;
+        color: #6c6650;
+      }
+      #opts {
+        border: 1px solid #8a8576;
+        padding: 10px 12px;
+        margin-bottom: 12px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px 12px;
+        font-size: 12px;
+        background: #fff;
+      }
+      #opts legend {
+        padding: 0 6px;
+        color: #6c6650;
+      }
+      #opts label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      #opts label.wide {
+        grid-column: 1 / -1;
+      }
+      #opts select,
+      #opts input,
+      #opts textarea {
+        font: inherit;
+        font-size: 12px;
+        padding: 4px 6px;
+        border: 1px solid #8a8576;
+        background: #faf8f0;
+        width: 100%;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 12px;
+        font-size: 12px;
+        background: #fff;
+        table-layout: fixed;
+      }
+      th,
+      td {
+        border: 1px solid #c4bfae;
+        padding: 6px 8px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: #e6e3d8;
+      }
+      #results th:nth-child(1) {
+        width: 23%;
+      }
+      #results th:nth-child(2) {
+        width: 23%;
+      }
+      #results th:nth-child(3),
+      #results th:nth-child(4) {
+        width: 90px;
+      }
+      #results th:nth-child(6) {
+        width: 76px;
+      }
+      td.opts,
+      td.input,
+      td.sum,
+      td.err {
+        overflow-wrap: anywhere;
+      }
+      td.err {
+        color: #a32b1e;
+      }
+      td.opts > div {
+        margin-top: 8px;
+      }
+      details {
+        margin-top: 8px;
+      }
+      details summary {
+        cursor: pointer;
+      }
+      details pre,
+      details .source {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        margin-top: 8px;
+      }
+      details pre {
+        font: inherit;
+        max-height: 240px;
+        overflow-y: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Summary Lab</h1>
+    <p class="sub">
+      Runs the input through the real on-device Summarizer with your options. Each run appends below so combos stay
+      comparable. First run may download the model — leave the page open. ★ = production default.
+    </p>
+    <p class="sub">
+      Timing is end-to-end creation + inference (including messaging, model download if needed, and cleanup), not
+      inference alone. Lengths use JavaScript string length (UTF-16 code units); prepared input is limited to 8,000
+      characters. Blank option text fields use production defaults.
+    </p>
+    <div id="avail">Checking production-default model availability…</div>
+    <fieldset id="opts">
+      <legend>Summarizer options (defaults = production)</legend>
+      <label
+        >Type
+        <select id="opt-type">
+          <option>tldr</option>
+          <option>key-points</option>
+          <option>teaser</option>
+          <option>headline</option>
+        </select></label
+      >
+      <label
+        >Length
+        <select id="opt-length">
+          <option>short</option>
+          <option>medium</option>
+          <option>long</option>
+        </select></label
+      >
+      <label
+        >Format
+        <select id="opt-format">
+          <option>plain-text</option>
+          <option>markdown</option>
+        </select></label
+      >
+      <label
+        >Preference
+        <select id="opt-preference">
+          <option>auto</option>
+          <option>speed</option>
+          <option>capability</option>
+        </select></label
+      >
+      <label>Output language <input id="opt-output-lang" type="text" /></label>
+      <label>Input languages (comma-separated) <input id="opt-input-langs" type="text" /></label>
+      <label class="wide">Shared context <textarea id="opt-shared" rows="2"></textarea></label>
+    </fieldset>
+    <textarea id="input" placeholder="Paste page text here (min 50 chars)…"></textarea>
+    <div class="row">
+      <button id="run" class="primary" type="button">Run</button>
+      <button id="loadTab" type="button">Load recent page</button>
+      <button id="export" type="button" disabled>Export JSON</button>
+      <span id="status" role="status"></span>
+    </div>
+    <table id="results" hidden>
+      <thead>
+        <tr>
+          <th>Options</th>
+          <th>Input</th>
+          <th>Creation + inference (ms)</th>
+          <th>Output chars</th>
+          <th>Summary</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <script src="lib.js"></script>
+    <script src="lab.js"></script>
+  </body>
+</html>

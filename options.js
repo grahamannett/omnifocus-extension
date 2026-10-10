@@ -149,6 +149,10 @@ syncProjectsBtn.addEventListener("click", () => startSync("projects"))
 syncTagsBtn.addEventListener("click", () => startSync("tags"))
 pasteProjectsBtn.addEventListener("click", () => pasteFrom("projects"))
 pasteTagsBtn.addEventListener("click", () => pasteFrom("tags"))
+document.getElementById("openLab").addEventListener("click", (e) => {
+  e.preventDefault()
+  chrome.tabs.create({ url: chrome.runtime.getURL("lab.html") })
+})
 
 for (const r of themeRadios) {
   r.addEventListener("change", () => {

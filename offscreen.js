@@ -1,14 +1,7 @@
-const SUMMARIZER_OPTIONS = {
-  type: "tldr",
-  length: "short",
-  format: "plain-text",
-  preference: "speed",
-  sharedContext: "Generate a single-sentence plain-language summary of the following web page.",
-  expectedInputLanguages: ["en"],
-  outputLanguage: "en",
-}
-
-let summarizerPromise = null
+// Summarizer option defaults live in lib.js (Lib.SUMMARIZER_DEFAULTS).
+// Only production retains an instance; each lab request owns a short-lived one.
+let productionSummarizerPromise = null
+const LAB_SUMMARY_TIMEOUT_MS = 60000
 
 // Prompt API (LanguageModel) — classifies a saved page into the user's existing
 // projects/tags. Restraint is deliberate: most saves should fall through to the Inbox.
@@ -31,37 +24,87 @@ function broadcastProgress(percent) {
   chrome.runtime.sendMessage({ target: "popup", action: "summarizerProgress", percent }).catch(() => {})
 }
 
-async function getSummarizer() {
-  if (summarizerPromise) return summarizerPromise
+async function createSummarizer(options, signal) {
   if (!("Summarizer" in self)) {
     throw new Error("Summarizer API unavailable")
   }
-  summarizerPromise = (async () => {
-    const availability = await Summarizer.availability(SUMMARIZER_OPTIONS)
-    if (availability === "unavailable") {
-      throw new Error("Summarizer unavailable on this device")
-    }
-    return Summarizer.create({
-      ...SUMMARIZER_OPTIONS,
-      monitor(m) {
-        m.addEventListener("downloadprogress", (e) => {
-          const percent = Math.round((e.loaded ?? 0) * 100)
-          console.log(`[offscreen] Summarizer download: ${percent}%`)
-          broadcastProgress(percent)
-        })
-      },
-    })
-  })().catch((err) => {
-    summarizerPromise = null
-    throw err
+  const availability = await Summarizer.availability(options)
+  signal?.throwIfAborted()
+  if (availability === "unavailable") {
+    throw new Error("Summarizer unavailable on this device")
+  }
+  return Summarizer.create({
+    ...options,
+    ...(signal ? { signal } : {}),
+    monitor(m) {
+      m.addEventListener("downloadprogress", (e) => {
+        const percent = Math.round((e.loaded ?? 0) * 100)
+        console.log(`[offscreen] Summarizer download: ${percent}%`)
+        broadcastProgress(percent)
+      })
+    },
   })
-  return summarizerPromise
+}
+
+async function summarizeLab(text, options) {
+  const controller = new AbortController()
+  const timeoutError = new Error("Lab summarize timed out")
+  let summarizer
+  let released = false
+  let timer
+  function release() {
+    if (summarizer && !released) {
+      released = true
+      summarizer.destroy()
+    }
+  }
+
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort(timeoutError)
+      try {
+        release()
+        reject(timeoutError)
+      } catch (err) {
+        reject(new Error(`${timeoutError.message}; cleanup failed: ${err.message}`))
+      }
+    }, LAB_SUMMARY_TIMEOUT_MS)
+  })
+  const operation = (async () => {
+    // Availability cannot be aborted. createSummarizer checks the signal after
+    // it settles so an expired request never proceeds to model creation.
+    summarizer = await createSummarizer(Lib.buildSummarizerOptions(options), controller.signal)
+    try {
+      // A late create result still belongs to this request and must be released.
+      controller.signal.throwIfAborted()
+      const summary = await summarizer.summarize(text, { signal: controller.signal })
+      controller.signal.throwIfAborted()
+      return Lib.normalizeSummary(summary)
+    } finally {
+      release()
+    }
+  })()
+  try {
+    return await Promise.race([operation, timeout])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function getSummarizer() {
+  if (!productionSummarizerPromise) {
+    productionSummarizerPromise = createSummarizer(Lib.buildSummarizerOptions()).catch((err) => {
+      productionSummarizerPromise = null
+      throw err
+    })
+  }
+  return productionSummarizerPromise
 }
 
 async function getAvailability() {
   if (!("Summarizer" in self)) return "unavailable"
   try {
-    return await Summarizer.availability(SUMMARIZER_OPTIONS)
+    return await Summarizer.availability(Lib.buildSummarizerOptions())
   } catch {
     return "unavailable"
   }
@@ -181,13 +224,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     })()
     return true
   }
-
   if (msg.action === "summarize") {
     ;(async () => {
       try {
-        const summarizer = await getSummarizer()
-        const summary = await summarizer.summarize(msg.text)
-        sendResponse({ ok: true, summary: (summary || "").trim() })
+        const isLab = msg.options != null
+        const summary = isLab
+          ? await summarizeLab(msg.text, msg.options)
+          : Lib.normalizeSummary(await (await getSummarizer()).summarize(msg.text))
+        sendResponse({ ok: true, summary })
       } catch (err) {
         sendResponse({ ok: false, error: err.message })
       }

@@ -26,7 +26,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   const params = new URLSearchParams(location.search)
   const embedded = params.get("embedded") === "1"
   const windowed = params.get("windowed") === "1"
-  const passedTabId = Number.parseInt(params.get("tabId"), 10) || null
+  const hasTabId = params.has("tabId")
+  const passedTabId = hasTabId ? Number(params.get("tabId")) : null
+  const captureId = embedded && params.has("captureId") ? params.get("captureId") : null
+  const hasCapture = captureId !== null
+  const selectionError = "Selection is unavailable or its source page changed. Close this editor and clip again."
+  const busyMessage = "An editor is already open. Finish or close it before starting another capture."
+  saveBtn.disabled = true
+  saveLinkOnlyBtn.disabled = true
   if (windowed || embedded) popOutBtn.classList.add("invisible")
 
   // In embedded mode, route close/save-finish through postMessage to the parent
@@ -41,10 +48,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  cancelBtn.addEventListener("click", closeMe)
+  closeBox.addEventListener("click", closeMe)
+  saveBtn.addEventListener("click", () => send(true))
+  saveLinkOnlyBtn.addEventListener("click", () => send(false))
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeMe()
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      send(true)
+    }
+  })
+  noteEl.addEventListener("input", () => autoSizeTextarea(noteEl))
+
   // Embedded: titlebar acts as drag handle. Forward mousedown to parent so it
   // can move the iframe wrapper. (Mouse events inside an iframe don't reach the
   // parent — postMessage bridges the gap.)
   if (embedded) {
+    // Fill the modal iframe (see popup.html .is-embedded rule); the 380px
+    // width only applies to the action-popup surface.
+    document.documentElement.classList.add("is-embedded")
+    window.addEventListener("message", (e) => {
+      if (e.source === window.parent && e.data?.__ofSaver === true && e.data.type === "capture-blocked") {
+        setError(busyMessage)
+      }
+    })
     const titlebar = document.querySelector(".pop-titlebar")
     if (titlebar) {
       titlebar.style.cursor = "move"
@@ -60,38 +88,57 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  // ── theme load ──
-  const { theme = "classic" } = await chrome.storage.sync.get(["theme"])
-  document.body.dataset.theme = theme
-
   let currentTab = null
 
   // ── progress relay from offscreen during model download ──
   chrome.runtime.onMessage.addListener((msg) => {
-    if (msg?.target !== "popup") return
+    if (hasCapture || msg?.target !== "popup") return
     if (msg.action === "summarizerProgress") {
       noteLabelEl.textContent = `Note · model dl ${msg.percent}%`
     }
   })
 
-  // ── resolve tab (pop-out passes tabId; otherwise use last focused window) ──
-  let tab = null
-  if (passedTabId) {
-    try {
+  // Explicit sources never fall back to whichever page happens to be active.
+  let tab
+  let capture
+  try {
+    if (hasTabId) {
+      if (!Number.isInteger(passedTabId) || passedTabId <= 0) throw new Error("Invalid source tab ID")
       tab = await chrome.tabs.get(passedTabId)
-    } catch {
-      // tab was closed since pop-out — fall through to fallback
+    } else {
+      ;[tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
     }
-  }
-  if (!tab) {
-    const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
-    tab = t
+    if (!tab?.url) throw new Error("Source tab is unavailable")
+    if (hasCapture) {
+      if (!hasTabId || !captureId) throw new Error(selectionError)
+      const key = `capture:${captureId}`
+      capture = (await chrome.storage.session.get(key))[key]
+      const liveTab = await chrome.tabs.get(passedTabId)
+      const age = Date.now() - capture?.ts
+      if (
+        !capture ||
+        !Number.isFinite(capture.ts) ||
+        age < 0 ||
+        age >= 5 * 60 * 1000 ||
+        capture.tabId !== passedTabId ||
+        liveTab.url !== capture.url ||
+        typeof capture.text !== "string" ||
+        !capture.text.trim()
+      ) {
+        throw new Error(selectionError)
+      }
+      tab = { id: capture.tabId, url: capture.url, title: capture.title }
+    }
+  } catch (err) {
+    noteLoadingEl.style.display = "none"
+    setError(hasCapture ? selectionError : err.message)
+    return
   }
   currentTab = tab
   try {
     const u = new URL(tab.url)
     hostEl.textContent = u.host
-    pathEl.textContent = (u.pathname + u.search) || "/"
+    pathEl.textContent = u.pathname + u.search || "/"
   } catch {
     hostEl.textContent = tab.url || "—"
     pathEl.textContent = ""
@@ -102,12 +149,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   autoSizeTextarea(titleEl)
   titleEl.addEventListener("input", () => autoSizeTextarea(titleEl))
 
-  // ── projects + tags from settings ──
-  const { projects = [], tags = [], suggestMeta = true } = await chrome.storage.sync.get([
-    "projects",
-    "tags",
-    "suggestMeta",
-  ])
+  // ── theme, projects + tags from settings ──
+  let settings
+  try {
+    settings = await chrome.storage.sync.get(["theme", "projects", "tags", "suggestMeta"])
+  } catch (err) {
+    noteLoadingEl.style.display = "none"
+    setError(err.message)
+    return
+  }
+  const { theme = "classic", projects = [], tags = [], suggestMeta = true } = settings
+  document.body.dataset.theme = theme
 
   if (projects.length) {
     projectRow.classList.remove("hidden")
@@ -214,30 +266,42 @@ document.addEventListener("DOMContentLoaded", async () => {
     else window.open(chrome.runtime.getURL("options.html"))
   })
 
-  // ── kick warmup + summarize in parallel ──
-  chrome.runtime.sendMessage({ action: "checkAvailability" }, () => {
-    if (chrome.runtime.lastError) return // ignore — we'll see the result via summarize
-  })
-
-  chrome.runtime.sendMessage({ action: "summarize", tabId: tab.id }, (resp) => {
+  if (capture) {
+    noteEl.value = Lib.quoteSelection(capture.text)
+    noteLabelEl.textContent = "Note · selection"
     revealNoteEditor()
-    if (chrome.runtime.lastError) {
-      noteLabelEl.textContent = "note"
-      return
+    autoSizeTextarea(noteEl)
+    saveBtn.disabled = false
+    saveLinkOnlyBtn.disabled = false
+    try {
+      await chrome.storage.session.remove(`capture:${captureId}`)
+    } catch (err) {
+      setError(`Selection loaded, but capture cleanup failed: ${err.message}`)
     }
-    if (resp?.success) {
-      noteEl.value = resp.summary || ""
-      autoSizeTextarea(noteEl)
-      noteLabelEl.textContent = resp.summary ? "Note · summary" : "Note"
-    } else {
-      noteLabelEl.textContent = `Note · ${resp?.error || "ai unavailable"}`
-    }
-  })
-
-  noteEl.addEventListener("input", () => autoSizeTextarea(noteEl))
+  } else {
+    saveBtn.disabled = false
+    saveLinkOnlyBtn.disabled = false
+    chrome.runtime.sendMessage({ action: "checkAvailability" }, () => {
+      if (chrome.runtime.lastError) return
+    })
+    chrome.runtime.sendMessage({ action: "summarize", tabId: tab.id }, (resp) => {
+      revealNoteEditor()
+      if (chrome.runtime.lastError) {
+        noteLabelEl.textContent = "note"
+        return
+      }
+      if (resp?.success) {
+        noteEl.value = resp.summary || ""
+        autoSizeTextarea(noteEl)
+        noteLabelEl.textContent = resp.summary ? "Note · summary" : "Note"
+      } else {
+        noteLabelEl.textContent = `Note · ${resp?.error || "ai unavailable"}`
+      }
+    })
+  }
 
   // ── AI project/tag suggestions (parallel with summary; never auto-applies) ──
-  if (suggestMeta && (projects.length || availableTags.length)) {
+  if (!hasCapture && suggestMeta && (projects.length || availableTags.length)) {
     chrome.runtime.sendMessage({ action: "suggestMeta", tabId: tab.id }, (resp) => {
       if (chrome.runtime.lastError || !resp?.success) return // silent degrade, like summary
       renderSuggestions(resp.project, resp.tags)
@@ -345,17 +409,18 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // ── save ──
   function send(includeNote) {
+    if (saveBtn.disabled) return
     setStatus("Saving…")
     saveBtn.disabled = true
     saveLinkOnlyBtn.disabled = true
 
-    const summary = noteEl.value.trim()
-    const note = includeNote && summary ? `${currentTab.url}\n\n${summary}` : currentTab.url
+    const note = includeNote ? Lib.buildNote(currentTab.url, noteEl.value) : currentTab.url
 
     chrome.runtime.sendMessage(
       {
         action: "addToOmnifocus",
-        customTitle: titleEl.value.trim() || (currentTab.title || ""),
+        tabId: currentTab.id,
+        customTitle: titleEl.value.trim() || currentTab.title || "",
         customNote: note,
         project: projectSelect.value || null,
         tags: selectedTags(),
@@ -381,131 +446,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     )
   }
 
-  saveBtn.addEventListener("click", () => send(true))
-  saveLinkOnlyBtn.addEventListener("click", () => send(false))
-  cancelBtn.addEventListener("click", closeMe)
-  closeBox.addEventListener("click", closeMe)
-
   popOutBtn.addEventListener("click", async () => {
     if (windowed || embedded) return
-    const tabId = currentTab?.id
-    const url = currentTab?.url || ""
-    if (!tabId || !/^https?:\/\//i.test(url)) {
-      setError("Pop-out only works on http(s) pages")
-      return
-    }
     try {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        func: injectModal,
-        args: [tabId, chrome.runtime.getURL("popup.html")],
-      })
-      window.close()
+      const resp = await chrome.runtime.sendMessage({ action: "openPopup", tabId: currentTab?.id })
+      if (resp?.success && resp.opened) window.close()
+      else setError(resp?.success ? busyMessage : resp?.error || "Pop-out failed")
     } catch (err) {
       setError(`Pop-out failed: ${err.message}`)
     }
   })
-
-  // ── keyboard ──
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      closeMe()
-      return
-    }
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault()
-      send(true)
-    }
-  })
 })
-
-// Runs in the page's content script context (passed to chrome.scripting.executeScript).
-// Defines the in-page draggable modal that hosts an iframe of the popup.
-function injectModal(tabId, popupUrl) {
-  const HOST_ID = "__omnifocus-saver-modal__"
-  const existing = document.getElementById(HOST_ID)
-  if (existing) {
-    existing.remove()
-    return
-  }
-
-  const host = document.createElement("div")
-  host.id = HOST_ID
-  Object.assign(host.style, {
-    position: "fixed",
-    top: "60px",
-    right: "60px",
-    width: "400px",
-    height: "640px",
-    zIndex: "2147483647",
-    boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
-    background: "#fff",
-    border: "1px solid rgba(0,0,0,0.2)",
-    borderRadius: "4px",
-    overflow: "hidden",
-    colorScheme: "light",
-  })
-
-  const iframe = document.createElement("iframe")
-  iframe.src = `${popupUrl}?embedded=1&tabId=${tabId}`
-  Object.assign(iframe.style, {
-    width: "100%",
-    height: "100%",
-    border: "0",
-    display: "block",
-    background: "#fff",
-  })
-
-  host.appendChild(iframe)
-  ;(document.body || document.documentElement).appendChild(host)
-
-  let dragging = false
-  let dragOffsetX = 0
-  let dragOffsetY = 0
-
-  function onMouseMove(e) {
-    if (!dragging) return
-    const left = Math.max(0, e.clientX - dragOffsetX)
-    const top = Math.max(0, e.clientY - dragOffsetY)
-    host.style.left = `${left}px`
-    host.style.top = `${top}px`
-    host.style.right = "auto"
-    host.style.bottom = "auto"
-  }
-  function onMouseUp() {
-    if (!dragging) return
-    dragging = false
-    iframe.style.pointerEvents = ""
-  }
-  function onMessage(e) {
-    if (e.source !== iframe.contentWindow) return
-    const m = e.data
-    if (!m || typeof m !== "object" || !m.__ofSaver) return
-    if (m.type === "drag-start") {
-      dragging = true
-      dragOffsetX = m.clientX
-      dragOffsetY = m.clientY
-      // Disable iframe pointer events while dragging so the parent receives
-      // mousemove even while the cursor is over the modal.
-      iframe.style.pointerEvents = "none"
-    } else if (m.type === "close") {
-      cleanup()
-    }
-  }
-  function onKey(e) {
-    if (e.key === "Escape") cleanup()
-  }
-
-  function cleanup() {
-    document.removeEventListener("mousemove", onMouseMove)
-    document.removeEventListener("mouseup", onMouseUp)
-    document.removeEventListener("keydown", onKey)
-    window.removeEventListener("message", onMessage)
-    host.remove()
-  }
-
-  document.addEventListener("mousemove", onMouseMove)
-  document.addEventListener("mouseup", onMouseUp)
-  document.addEventListener("keydown", onKey)
-  window.addEventListener("message", onMessage)
-}
