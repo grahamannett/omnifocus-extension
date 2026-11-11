@@ -102,27 +102,36 @@ async function warmupSummarizer() {
   }
 }
 
-async function summarizeTab(tabId) {
+async function summarizeTab(tabId, expectedUrl) {
   const tab = await chrome.tabs.get(tabId)
+  const sourceChanged = "Source page changed. Close this editor and open it again."
+  if (expectedUrl !== undefined && tab.url !== expectedUrl) throw new Error(sourceChanged)
   const text = await getTabText(tab)
+  if (expectedUrl !== undefined && (await chrome.tabs.get(tabId)).url !== expectedUrl) throw new Error(sourceChanged)
   return summarizeText(text)
+}
+
+function classifyConfiguredText(text, meta) {
+  if (!text || text.length < Lib.SUMMARY_MIN_TEXT_LEN) return { project: "", tags: [], skipped: "text-too-short" }
+  const truncated = text.length > MAX_CLASSIFY_LEN ? text.slice(0, MAX_CLASSIFY_LEN) : text
+
+  return withTimeout(classifyViaOffscreen(truncated, meta), SUMMARY_TIMEOUT_MS, "classify")
 }
 
 async function suggestMetaForTab(tabId) {
   const tab = await chrome.tabs.get(tabId)
   const { projects = [], tags = [] } = await chrome.storage.sync.get(["projects", "tags"])
   // Nothing configured to suggest from → straight to Inbox, no inference.
-  if (!projects.length && !tags.length) return { project: "", tags: [] }
+  if (!projects.length && !tags.length) return { project: "", tags: [], skipped: "no-configured-names" }
 
   const text = await getTabText(tab)
-  if (!text || text.length < Lib.SUMMARY_MIN_TEXT_LEN) return { project: "", tags: [] }
-  const truncated = text.length > MAX_CLASSIFY_LEN ? text.slice(0, MAX_CLASSIFY_LEN) : text
+  return classifyConfiguredText(text, { title: tab.title || "", url: tab.url || "", projects, tags })
+}
 
-  return withTimeout(
-    classifyViaOffscreen(truncated, { title: tab.title || "", url: tab.url || "", projects, tags }),
-    SUMMARY_TIMEOUT_MS,
-    "classify",
-  )
+async function suggestMetaForText(text, title, url) {
+  const { projects = [], tags = [] } = await chrome.storage.sync.get(["projects", "tags"])
+  if (!projects.length && !tags.length) return { project: "", tags: [], skipped: "no-configured-names" }
+  return classifyConfiguredText(text, { title, url, projects, tags })
 }
 
 async function addToOmniFocus(tab, opts) {
@@ -221,7 +230,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ success: false, error: "no tabId" })
       return false
     }
-    summarizeTab(tabId)
+    if (msg.expectedUrl !== undefined && typeof msg.expectedUrl !== "string") {
+      sendResponse({ success: false, error: "Invalid expected source URL" })
+      return false
+    }
+    summarizeTab(tabId, msg.expectedUrl)
       .then((summary) => sendResponse({ success: true, summary: summary || "" }))
       .catch((err) => {
         log.warn("summarize failed:", err.message)
@@ -237,9 +250,44 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       return false
     }
     suggestMetaForTab(tabId)
-      .then(({ project, tags }) => sendResponse({ success: true, project, tags }))
+      .then((result) => sendResponse({ success: true, ...result }))
       .catch((err) => {
         log.warn("suggestMeta failed:", err.message)
+        sendResponse({ success: false, error: err.message })
+      })
+    return true
+  }
+
+  if (msg?.action === "suggestMetaForText") {
+    if (typeof msg.text !== "string") {
+      sendResponse({ success: false, error: "no text" })
+      return false
+    }
+    suggestMetaForText(
+      msg.text,
+      typeof msg.title === "string" ? msg.title : "",
+      typeof msg.url === "string" ? msg.url : "",
+    )
+      .then((result) => sendResponse({ success: true, ...result }))
+      .catch((err) => {
+        log.warn("selection suggestions failed:", err.message)
+        sendResponse({ success: false, error: err.message })
+      })
+    return true
+  }
+
+  if (msg?.action === "summarizeSelection") {
+    if (typeof msg.text !== "string") {
+      sendResponse({ success: false, error: "no text" })
+      return false
+    }
+    summarizeText(msg.text, {
+      sharedContext:
+        "Summarize the following selected passage in a single plain-language sentence. Use only the information in the passage.",
+    })
+      .then((summary) => sendResponse({ success: true, summary: summary || "" }))
+      .catch((err) => {
+        log.warn("selection summarize failed:", err.message)
         sendResponse({ success: false, error: err.message })
       })
     return true
@@ -320,7 +368,6 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onStartup.addListener(() => {
   log.info("onStartup — kicking warmup")
   warmupSummarizer()
-  setupContextMenus()
 })
 
 // ── selection context menu ("Clip to OmniFocus" between ChatGPT/Obsidian) ──
@@ -328,29 +375,37 @@ const MENU_PARENT = "of-add-selection"
 const MENU_QUICK = "of-quick-save-selection"
 const MENU_EDIT = "of-edit-selection"
 
-function setupContextMenus() {
+function createContextMenu(properties) {
+  return new Promise((resolve, reject) => {
+    chrome.contextMenus.create(properties, () => {
+      const error = chrome.runtime.lastError
+      if (error) reject(new Error(`${properties.id}: ${error.message}`))
+      else resolve()
+    })
+  })
+}
+
+// Chrome persists menus across worker and browser restarts. Rebuild only on
+// install/update so worker loading cannot race a second registration.
+async function setupContextMenus() {
   try {
-    chrome.contextMenus.removeAll(() => {
-      if (chrome.runtime.lastError) {
-        // removeAll can report "no menu" on first install — safe to ignore.
-      }
-      chrome.contextMenus.create({
-        id: MENU_PARENT,
-        title: "Clip to OmniFocus",
-        contexts: ["selection"],
-      })
-      chrome.contextMenus.create({
-        id: MENU_QUICK,
-        parentId: MENU_PARENT,
-        title: "Quick-save selection",
-        contexts: ["selection"],
-      })
-      chrome.contextMenus.create({
-        id: MENU_EDIT,
-        parentId: MENU_PARENT,
-        title: "Edit before saving…",
-        contexts: ["selection"],
-      })
+    await chrome.contextMenus.removeAll()
+    await createContextMenu({
+      id: MENU_PARENT,
+      title: "Clip to OmniFocus",
+      contexts: ["selection"],
+    })
+    await createContextMenu({
+      id: MENU_QUICK,
+      parentId: MENU_PARENT,
+      title: "Quick-save selection",
+      contexts: ["selection"],
+    })
+    await createContextMenu({
+      id: MENU_EDIT,
+      parentId: MENU_PARENT,
+      title: "Edit before saving…",
+      contexts: ["selection"],
     })
   } catch (err) {
     log.warn("context menu setup failed:", err.message)
@@ -474,6 +529,10 @@ function injectModal(tabId, popupUrl, captureId) {
 
   function onMouseMove(e) {
     if (!dragging) return
+    if ((e.buttons & 1) === 0) {
+      onMouseUp()
+      return
+    }
     const left = Math.max(0, e.clientX - dragOffsetX)
     const top = Math.max(0, e.clientY - dragOffsetY)
     host.style.left = `${left}px`
@@ -497,33 +556,38 @@ function injectModal(tabId, popupUrl, captureId) {
       // Disable iframe pointer events while dragging so the parent receives
       // mousemove even while the cursor is over the modal.
       iframe.style.pointerEvents = "none"
+    } else if (m.type === "drag-end") {
+      onMouseUp()
     } else if (m.type === "close") {
       cleanup()
     }
+  }
+  function onVisibilityChange() {
+    if (document.hidden) onMouseUp()
   }
   function onKey(e) {
     if (e.key === "Escape") cleanup()
   }
   function cleanup() {
     onMouseUp()
-    document.removeEventListener("mousemove", onMouseMove)
-    document.removeEventListener("mouseup", onMouseUp)
+    document.removeEventListener("mousemove", onMouseMove, true)
+    document.removeEventListener("mouseup", onMouseUp, true)
+    document.removeEventListener("visibilitychange", onVisibilityChange)
     document.removeEventListener("keydown", onKey)
+    window.removeEventListener("blur", onMouseUp)
     window.removeEventListener("message", onMessage)
     host.remove()
   }
 
-  document.addEventListener("mousemove", onMouseMove)
-  document.addEventListener("mouseup", onMouseUp)
+  document.addEventListener("mousemove", onMouseMove, true)
+  document.addEventListener("mouseup", onMouseUp, true)
+  document.addEventListener("visibilitychange", onVisibilityChange)
   document.addEventListener("keydown", onKey)
+  window.addEventListener("blur", onMouseUp)
   window.addEventListener("message", onMessage)
   host.appendChild(iframe)
   ;(document.body || document.documentElement).appendChild(host)
   return true
 }
-
-// Menus persist across service-worker restarts, but re-create on wake so a
-// fresh install/upgrade never leaves the worker without them.
-setupContextMenus()
 
 console.log("[of-ext] background loaded")

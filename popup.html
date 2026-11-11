@@ -313,6 +313,45 @@
         color: var(--ink-3);
       }
 
+      .suggest-chips {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+      }
+
+      .suggest-status {
+        color: var(--ink-3);
+        font-size: 11px;
+        overflow-wrap: anywhere;
+      }
+
+      .suggest-status.error {
+        color: #b03030;
+      }
+
+      .suggest-status.loading::before {
+        content: "";
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        margin-right: 6px;
+        background: var(--of-blue);
+        animation: suggestion-pulse 1s steps(2) infinite;
+      }
+
+      @keyframes suggestion-pulse {
+        50% {
+          opacity: 0.3;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .suggest-status.loading::before {
+          animation: none;
+        }
+      }
+
       .meta-row .val .tag.suggest {
         color: var(--ink);
         font-family: var(--font-mono);
@@ -474,6 +513,49 @@
       .note-text::placeholder {
         color: #aa9658;
         font-style: italic;
+      }
+
+      .summary-ai {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid var(--rule);
+      }
+
+      .summary-source {
+        margin-bottom: 6px;
+        font-size: 10px;
+        color: var(--ink-3);
+      }
+
+      .summary-ai-controls {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .summary-ai-status {
+        font-size: 10px;
+        color: var(--ink-3);
+        overflow-wrap: anywhere;
+      }
+
+      .summary-ai-status.error {
+        color: #b03030;
+      }
+
+      .summary-preview {
+        border-top: 1px solid var(--rule);
+        margin-top: 8px;
+        padding-top: 8px;
+      }
+
+      .summary-preview p {
+        font-size: 11.5px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        margin-bottom: 6px;
       }
 
       .note-loading {
@@ -945,7 +1027,10 @@
       </div>
       <div class="meta-row hidden" id="suggestRow">
         <div class="lbl">suggest</div>
-        <div class="val" id="suggestVal"></div>
+        <div class="val">
+          <span class="suggest-status hidden" id="suggestStatus" role="status" aria-live="polite"></span>
+          <div class="suggest-chips" id="suggestVal"></div>
+        </div>
       </div>
       <div class="meta-row" id="whenRow">
         <div class="lbl">when</div>
@@ -959,6 +1044,17 @@
       <span class="note-tag" id="noteLabel">Note · summary</span>
       <div class="note-loading" id="noteLoading"><span></span><span></span><span></span></div>
       <textarea class="note-text" id="note" rows="3" placeholder="Add a note…" hidden></textarea>
+      <div class="summary-ai hidden" id="summaryAi">
+        <div class="summary-source">Summary source: <span id="summarySource"></span></div>
+        <div class="summary-ai-controls">
+          <button class="btn-px" id="generateSummary" type="button" disabled>Summarize</button>
+          <span class="summary-ai-status" id="summaryStatus" role="status" aria-live="polite"></span>
+        </div>
+        <div class="summary-preview hidden" id="summaryPreview">
+          <p id="summaryPreviewText"></p>
+          <button class="btn-px" id="applySummary" type="button" disabled>Add to note</button>
+        </div>
+      </div>
     </div>
 
     <div class="status" id="status"></div>

@@ -59,7 +59,7 @@ function loadOffscreen(create, { availability = async () => "available", languag
     })
   request.expireDeadline = () => {
     const [id, timer] = [...timers.entries()].find(([, timer]) => timer.ms === 60000) || []
-    assert.ok(timer, "a 60-second lab deadline should be active")
+    assert.ok(timer, "a 60-second isolated summary deadline should be active")
     timers.delete(id)
     timer.callback()
   }
@@ -331,7 +331,7 @@ describe("offscreen summarizer lifetime", () => {
       const stuck = request({ action: "summarize", text, options: {} }, () => assert.equal(releases, 1))
       await inferenceStarted.promise
       request.expireDeadline()
-      assert.deepEqual(await stuck, { ok: false, error: "Lab summarize timed out" })
+      assert.deepEqual(await stuck, { ok: false, error: "Summary timed out" })
       assert.equal(signal.aborted, true)
       assert.equal(releases, 1)
       assert.equal(request.pendingTimers(), 0)
@@ -363,7 +363,7 @@ describe("offscreen summarizer lifetime", () => {
       const pending = request({ action: "summarize", text, options: {} })
       await creationStarted.promise
       request.expireDeadline()
-      assert.deepEqual(await pending, { ok: false, error: "Lab summarize timed out" })
+      assert.deepEqual(await pending, { ok: false, error: "Summary timed out" })
       assert.equal(signal.aborted, true)
       creation.resolve({
         summarize() {
@@ -400,7 +400,7 @@ describe("offscreen summarizer lifetime", () => {
     const pending = request({ action: "summarize", text, options: {} })
     await availabilityStarted.promise
     request.expireDeadline()
-    assert.deepEqual(await pending, { ok: false, error: "Lab summarize timed out" })
+    assert.deepEqual(await pending, { ok: false, error: "Summary timed out" })
     availability.resolve("available")
     await new Promise((resolve) => setImmediate(resolve))
     assert.equal(creations, 0)
@@ -434,7 +434,7 @@ describe("offscreen summarizer lifetime", () => {
     const pending = request({ action: "summarize", text, options: {} })
     await inferenceStarted.promise
     request.expireDeadline()
-    assert.deepEqual(await pending, { ok: false, error: "Lab summarize timed out" })
+    assert.deepEqual(await pending, { ok: false, error: "Summary timed out" })
     assert.deepEqual(releases, [2])
     assert.deepEqual(await request({ action: "summarize", text }), production)
     lateInference.resolve("Late lab result.")
@@ -446,6 +446,56 @@ describe("offscreen summarizer lifetime", () => {
 })
 
 describe("offscreen classifier integration", () => {
+  it("declares classifier input and output languages during warmup and reuses them for inference", async () => {
+    const availabilityOptions = []
+    const creationOptions = []
+    const warnings = []
+    let clones = 0
+    const request = loadOffscreen(async () => ({}), {
+      languageModel: {
+        async availability(options) {
+          availabilityOptions.push(structuredClone(options))
+          return "available"
+        },
+        async create(options) {
+          creationOptions.push(
+            structuredClone({
+              expectedInputs: options.expectedInputs,
+              expectedOutputs: options.expectedOutputs,
+            }),
+          )
+          return {
+            async clone() {
+              clones++
+              return {
+                async prompt() {
+                  if (!options.expectedOutputs?.some((output) => output.type === "text" && output.languages?.length)) {
+                    warnings.push("No output language was specified in a LanguageModel API request.")
+                  }
+                  return JSON.stringify({ project: "", tags: [] })
+                },
+                destroy() {},
+              }
+            },
+          }
+        },
+      },
+    })
+
+    assert.deepEqual(await request({ action: "warmup" }), { ok: true, availability: "available" })
+    const message = { action: "classify", text, projects: [], tags: [] }
+    assert.deepEqual(await request(message), { ok: true, project: "", tags: [] })
+    assert.deepEqual(await request(message), { ok: true, project: "", tags: [] })
+    assert.deepEqual(warnings, [])
+    const expected = {
+      expectedInputs: [{ type: "text", languages: ["en"] }],
+      expectedOutputs: [{ type: "text", languages: ["en"] }],
+    }
+    assert.deepEqual(availabilityOptions, [expected])
+    assert.deepEqual(creationOptions, [expected])
+    assert.equal(clones, 2)
+  })
+
   it("reuses its base, releases each clone, and filters model output to configured names", async () => {
     let creations = 0
     let clones = 0
@@ -491,6 +541,8 @@ describe("offscreen classifier integration", () => {
         async create(options) {
           creations++
           assert.equal(options.initialPrompts[0].role, "system")
+          assert.deepEqual(structuredClone(options.expectedInputs), [{ type: "text", languages: ["en"] }])
+          assert.deepEqual(structuredClone(options.expectedOutputs), [{ type: "text", languages: ["en"] }])
           if (creations === 1)
             return {
               async clone() {

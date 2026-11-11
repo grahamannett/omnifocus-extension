@@ -68,8 +68,15 @@ function loadLab() {
   const imports = []
   const runs = []
   const exports = []
+  const uncheckedErrors = []
+  let lastError
+  let errorChecked
   const chrome = {
     runtime: {
+      get lastError() {
+        errorChecked = true
+        return lastError
+      },
       sendMessage(message, callback) {
         if (message.action === "labGetTabText") imports.push(callback)
         else if (message.action === "summarizeWithOptions") runs.push({ message, callback })
@@ -105,10 +112,16 @@ function loadLab() {
     elements,
     imports,
     runs,
+    uncheckedErrors,
     respondImport(index, response, error) {
-      chrome.runtime.lastError = error ? { message: error } : undefined
-      imports[index](response)
-      delete chrome.runtime.lastError
+      lastError = error ? { message: error } : undefined
+      errorChecked = false
+      try {
+        imports[index](response)
+      } finally {
+        if (error && !errorChecked) uncheckedErrors.push(`Unchecked runtime.lastError: ${error}`)
+        lastError = undefined
+      }
     },
     async summarize() {
       const completion = elements.run.click()
@@ -164,6 +177,34 @@ describe("lab page imports", () => {
     lab.respondImport(1, second)
     assert.equal(lab.elements.input.value, second.text)
   })
+
+  for (const superseded of [false, true]) {
+    it(`consumes ${superseded ? "superseded" : "canceled"} import messaging errors without changing the current UI`, () => {
+      const lab = loadLab()
+      lab.elements.loadTab.click()
+      if (superseded) {
+        lab.elements.loadTab.click()
+      } else {
+        lab.elements.input.value = "My edited input. ".repeat(10)
+        lab.elements.input.dispatch("input")
+      }
+      const snapshot = () => ({
+        input: lab.elements.input.value,
+        status: lab.elements.status.textContent,
+        label: lab.elements.loadTab.textContent,
+        busy: lab.elements.loadTab.attributes["aria-busy"],
+      })
+      const current = snapshot()
+      lab.respondImport(0, undefined, "Connection closed")
+
+      assert.deepEqual(lab.uncheckedErrors, [])
+      assert.deepEqual(snapshot(), current)
+      if (superseded) {
+        lab.respondImport(1, second)
+        assert.equal(lab.elements.input.value, second.text)
+      }
+    })
+  }
 
   for (const transportError of [false, true]) {
     it(`retains existing text and provenance on ${transportError ? "transport" : "page"} errors`, async () => {

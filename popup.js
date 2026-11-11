@@ -8,6 +8,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const tagsContainer = document.getElementById("tags")
   const suggestRow = document.getElementById("suggestRow")
   const suggestVal = document.getElementById("suggestVal")
+  const suggestStatusEl = document.getElementById("suggestStatus")
   const flagBtn = document.getElementById("flag")
   const dueBtns = Array.from(document.querySelectorAll("button.preset[data-due]"))
   const noteLabelEl = document.getElementById("noteLabel")
@@ -21,6 +22,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   const popOutBtn = document.getElementById("popOut")
   const openOptionsLink = document.getElementById("openOptions")
   const whenValEl = document.getElementById("whenVal")
+  const summaryAiEl = document.getElementById("summaryAi")
+  const summarySourceEl = document.getElementById("summarySource")
+  const generateSummaryBtn = document.getElementById("generateSummary")
+  const summaryStatusEl = document.getElementById("summaryStatus")
+  const summaryPreviewEl = document.getElementById("summaryPreview")
+  const summaryPreviewTextEl = document.getElementById("summaryPreviewText")
+  const applySummaryBtn = document.getElementById("applySummary")
 
   // ── mode detection ──
   const params = new URLSearchParams(location.search)
@@ -32,6 +40,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   const hasCapture = captureId !== null
   const selectionError = "Selection is unavailable or its source page changed. Close this editor and clip again."
   const busyMessage = "An editor is already open. Finish or close it before starting another capture."
+  let editorClosed = false
+  let summaryPending = false
+  let summaryPreview = ""
+  let appliedSummary = ""
+  let hasGeneratedSummary = false
+  let noteRevision = 0
+  let saveRevision = 0
   saveBtn.disabled = true
   saveLinkOnlyBtn.disabled = true
   if (windowed || embedded) popOutBtn.classList.add("invisible")
@@ -39,6 +54,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // In embedded mode, route close/save-finish through postMessage to the parent
   // page so the modal can be removed.
   function closeMe() {
+    editorClosed = true
     if (embedded) {
       try {
         window.parent.postMessage({ __ofSaver: true, type: "close" }, "*")
@@ -59,7 +75,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       send(true)
     }
   })
-  noteEl.addEventListener("input", () => autoSizeTextarea(noteEl))
+  noteEl.addEventListener("input", () => {
+    noteRevision++
+    autoSizeTextarea(noteEl)
+    updateSummaryControls()
+  })
 
   // Embedded: titlebar acts as drag handle. Forward mousedown to parent so it
   // can move the iframe wrapper. (Mouse events inside an iframe don't reach the
@@ -77,7 +97,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (titlebar) {
       titlebar.style.cursor = "move"
       titlebar.addEventListener("mousedown", (e) => {
-        if (e.target.closest("button")) return // skip clicks on close/grow boxes
+        if (e.button !== 0 || e.target.closest("button")) return
+        e.preventDefault()
         try {
           window.parent.postMessage(
             { __ofSaver: true, type: "drag-start", clientX: e.clientX, clientY: e.clientY },
@@ -86,15 +107,27 @@ document.addEventListener("DOMContentLoaded", async () => {
         } catch {}
       })
     }
+    // A quick release can occur in this iframe before the parent processes
+    // drag-start and disables its pointer events. Relay it so dragging ends.
+    function endDrag() {
+      try {
+        window.parent.postMessage({ __ofSaver: true, type: "drag-end" }, "*")
+      } catch {}
+    }
+    document.addEventListener("mouseup", endDrag, true)
+    window.addEventListener("blur", endDrag)
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) endDrag()
+    })
   }
 
   let currentTab = null
 
   // ── progress relay from offscreen during model download ──
   chrome.runtime.onMessage.addListener((msg) => {
-    if (hasCapture || msg?.target !== "popup") return
+    if (editorClosed || !summaryPending || msg?.target !== "popup") return
     if (msg.action === "summarizerProgress") {
-      noteLabelEl.textContent = `Note · model dl ${msg.percent}%`
+      summaryStatusEl.textContent = `Downloading AI model… ${msg.percent}%`
     }
   })
 
@@ -266,49 +299,164 @@ document.addEventListener("DOMContentLoaded", async () => {
     else window.open(chrome.runtime.getURL("options.html"))
   })
 
-  if (capture) {
-    noteEl.value = Lib.quoteSelection(capture.text)
-    noteLabelEl.textContent = "Note · selection"
-    revealNoteEditor()
+  noteEl.value = capture ? Lib.quoteSelection(capture.text) : ""
+  noteLabelEl.textContent = capture ? "Note · selection" : "Note"
+  revealNoteEditor()
+  autoSizeTextarea(noteEl)
+  saveBtn.disabled = false
+  saveLinkOnlyBtn.disabled = false
+  summaryAiEl.classList.remove("hidden")
+  summarySourceEl.textContent = capture ? "Selection" : "Page"
+  generateSummaryBtn.title = capture ? "Summarize the original selected text" : "Summarize the source page"
+  updateSummaryControls()
+  if (capture && capture.text.length < Lib.SUMMARY_MIN_TEXT_LEN) {
+    summaryStatusEl.textContent = `Select at least ${Lib.SUMMARY_MIN_TEXT_LEN} characters to summarize.`
+  }
+  generateSummaryBtn.addEventListener("click", () => runSummary())
+  applySummaryBtn.addEventListener("click", () => {
+    if (applySummaryBtn.disabled || !summaryPreview) return
+    const suffix = summarySuffix()
+    noteEl.value =
+      suffix !== null
+        ? summaryPreview + suffix
+        : noteEl.value.trim()
+          ? `${summaryPreview}\n\n${noteEl.value}`
+          : summaryPreview
+    noteRevision++
+    appliedSummary = summaryPreview
+    noteLabelEl.textContent = capture ? "Note · selection + summary" : "Note · summary"
     autoSizeTextarea(noteEl)
-    saveBtn.disabled = false
-    saveLinkOnlyBtn.disabled = false
+    summaryPreview = ""
+    summaryPreviewEl.classList.add("hidden")
+    summaryStatusEl.textContent = ""
+    summaryStatusEl.classList.remove("error")
+    updateSummaryControls()
+  })
+  if (capture) {
     try {
       await chrome.storage.session.remove(`capture:${captureId}`)
     } catch (err) {
       setError(`Selection loaded, but capture cleanup failed: ${err.message}`)
     }
   } else {
-    saveBtn.disabled = false
-    saveLinkOnlyBtn.disabled = false
     chrome.runtime.sendMessage({ action: "checkAvailability" }, () => {
       if (chrome.runtime.lastError) return
     })
-    chrome.runtime.sendMessage({ action: "summarize", tabId: tab.id }, (resp) => {
-      revealNoteEditor()
-      if (chrome.runtime.lastError) {
-        noteLabelEl.textContent = "note"
-        return
-      }
-      if (resp?.success) {
-        noteEl.value = resp.summary || ""
-        autoSizeTextarea(noteEl)
-        noteLabelEl.textContent = resp.summary ? "Note · summary" : "Note"
-      } else {
-        noteLabelEl.textContent = `Note · ${resp?.error || "ai unavailable"}`
-      }
-    })
+    runSummary({ automatic: true })
   }
 
   // ── AI project/tag suggestions (parallel with summary; never auto-applies) ──
-  if (!hasCapture && suggestMeta && (projects.length || availableTags.length)) {
-    chrome.runtime.sendMessage({ action: "suggestMeta", tabId: tab.id }, (resp) => {
-      if (chrome.runtime.lastError || !resp?.success) return // silent degrade, like summary
+  if (!suggestMeta) {
+    showSuggestionStatus("AI suggestions are off in Settings.")
+  } else if (!projects.length && !availableTags.length) {
+    showSuggestionStatus("Add projects or tags in Settings for suggestions.")
+  } else if (capture && capture.text.length < Lib.SUMMARY_MIN_TEXT_LEN) {
+    showSuggestionStatus(`Select at least ${Lib.SUMMARY_MIN_TEXT_LEN} characters for suggestions.`)
+  } else {
+    showSuggestionStatus("Finding project/tag suggestions…", "loading")
+    const message = capture
+      ? { action: "suggestMetaForText", text: capture.text, title: capture.title, url: capture.url }
+      : { action: "suggestMeta", tabId: tab.id }
+    chrome.runtime.sendMessage(message, (resp) => {
+      const error =
+        chrome.runtime.lastError?.message || (!resp?.success && (resp?.error || "No response from extension"))
+      if (editorClosed) return
+      if (error) {
+        showSuggestionStatus(`Suggestions unavailable: ${error}`, "error")
+        return
+      }
+      if (resp.skipped === "text-too-short") {
+        showSuggestionStatus(
+          capture
+            ? `Select at least ${Lib.SUMMARY_MIN_TEXT_LEN} characters for suggestions.`
+            : "Page text is too short for suggestions.",
+        )
+        return
+      }
+      if (resp.skipped === "no-configured-names") {
+        showSuggestionStatus("Add projects or tags in Settings for suggestions.")
+        return
+      }
+      suggestStatusEl.classList.remove("loading", "error")
+      suggestStatusEl.classList.add("hidden")
       renderSuggestions(resp.project, resp.tags)
+      if (!suggestVal.children.length) showSuggestionStatus("No new project/tag suggestions.")
     })
   }
 
   // ── helpers ──
+  function showSuggestionStatus(message, state) {
+    suggestRow.classList.remove("hidden")
+    suggestStatusEl.textContent = message
+    suggestStatusEl.classList.remove("hidden", "loading", "error")
+    if (state) suggestStatusEl.classList.add(state)
+  }
+
+  function runSummary({ automatic = false } = {}) {
+    if (generateSummaryBtn.disabled) return
+    const initialNote = noteEl.value
+    const initialRevision = noteRevision
+    const initialSaveRevision = saveRevision
+    summaryPending = true
+    summaryStatusEl.textContent = capture ? "Summarizing selection…" : "Summarizing page…"
+    summaryStatusEl.classList.remove("error")
+    updateSummaryControls()
+    const message = capture
+      ? { action: "summarizeSelection", text: capture.text }
+      : { action: "summarize", tabId: currentTab.id, expectedUrl: currentTab.url }
+    chrome.runtime.sendMessage(message, (resp) => {
+      const error = chrome.runtime.lastError?.message || (!resp?.success && (resp?.error || "Summary unavailable"))
+      summaryPending = false
+      if (editorClosed) return
+      const summary = error || typeof resp?.summary !== "string" ? "" : Lib.normalizeSummary(resp.summary)
+      if (error || !summary) {
+        summaryStatusEl.textContent = error || "No summary returned. Try again."
+        summaryStatusEl.classList.add("error")
+      } else {
+        hasGeneratedSummary = true
+        summaryStatusEl.textContent = ""
+        if (
+          automatic &&
+          noteRevision === initialRevision &&
+          noteEl.value === initialNote &&
+          saveRevision === initialSaveRevision &&
+          !saveBtn.disabled
+        ) {
+          noteEl.value = summary
+          noteRevision++
+          appliedSummary = summary
+          noteLabelEl.textContent = "Note · summary"
+          autoSizeTextarea(noteEl)
+        } else {
+          summaryPreview = summary
+          summaryPreviewTextEl.textContent = summary
+          summaryPreviewEl.classList.remove("hidden")
+        }
+      }
+      updateSummaryControls()
+    })
+  }
+
+  // Replace only an unchanged generated prefix. User edits and the quote tail
+  // remain intact; editing that prefix changes the action to Add to note.
+  function summarySuffix() {
+    if (!appliedSummary) return null
+    if (noteEl.value === appliedSummary) return ""
+    return noteEl.value.startsWith(`${appliedSummary}\n\n`) ? noteEl.value.slice(appliedSummary.length) : null
+  }
+
+  function updateSummaryControls() {
+    const busy = summaryPending || saveBtn.disabled || editorClosed
+    generateSummaryBtn.disabled = busy || !!(capture && capture.text.length < Lib.SUMMARY_MIN_TEXT_LEN)
+    generateSummaryBtn.textContent = summaryPending
+      ? "Summarizing…"
+      : hasGeneratedSummary
+        ? "Regenerate summary"
+        : "Summarize"
+    applySummaryBtn.disabled = busy || !summaryPreview
+    applySummaryBtn.textContent = summarySuffix() === null ? "Add to note" : "Replace summary"
+  }
+
   function autoSizeTextarea(el) {
     el.style.height = "auto"
     el.style.height = el.scrollHeight + "px"
@@ -410,9 +558,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   // ── save ──
   function send(includeNote) {
     if (saveBtn.disabled) return
+    saveRevision++
     setStatus("Saving…")
     saveBtn.disabled = true
     saveLinkOnlyBtn.disabled = true
+    updateSummaryControls()
 
     const note = includeNote ? Lib.buildNote(currentTab.url, noteEl.value) : currentTab.url
 
@@ -432,6 +582,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           setError(chrome.runtime.lastError.message)
           saveBtn.disabled = false
           saveLinkOnlyBtn.disabled = false
+          updateSummaryControls()
           return
         }
         if (resp?.success) {
@@ -441,6 +592,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           setError(resp?.error || "Failed to save")
           saveBtn.disabled = false
           saveLinkOnlyBtn.disabled = false
+          updateSummaryControls()
         }
       },
     )

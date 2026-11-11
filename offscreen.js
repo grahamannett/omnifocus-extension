@@ -1,7 +1,7 @@
 // Summarizer option defaults live in lib.js (Lib.SUMMARIZER_DEFAULTS).
-// Only production retains an instance; each lab request owns a short-lived one.
+// Page summaries reuse an instance; selection summaries and lab runs use isolated sessions.
 let productionSummarizerPromise = null
-const LAB_SUMMARY_TIMEOUT_MS = 60000
+const ISOLATED_SUMMARY_TIMEOUT_MS = 60000
 
 // Prompt API (LanguageModel) — classifies a saved page into the user's existing
 // projects/tags. Restraint is deliberate: most saves should fall through to the Inbox.
@@ -17,6 +17,10 @@ const CLASSIFIER_SYSTEM_PROMPT = [
   "",
   "Respond with JSON only.",
 ].join("\n")
+const CLASSIFIER_LANGUAGE_OPTIONS = {
+  expectedInputs: [{ type: "text", languages: ["en"] }],
+  expectedOutputs: [{ type: "text", languages: ["en"] }],
+}
 
 let classifierPromise = null
 
@@ -46,9 +50,9 @@ async function createSummarizer(options, signal) {
   })
 }
 
-async function summarizeLab(text, options) {
+async function summarizeIsolated(text, options) {
   const controller = new AbortController()
-  const timeoutError = new Error("Lab summarize timed out")
+  const timeoutError = new Error("Summary timed out")
   let summarizer
   let released = false
   let timer
@@ -68,7 +72,7 @@ async function summarizeLab(text, options) {
       } catch (err) {
         reject(new Error(`${timeoutError.message}; cleanup failed: ${err.message}`))
       }
-    }, LAB_SUMMARY_TIMEOUT_MS)
+    }, ISOLATED_SUMMARY_TIMEOUT_MS)
   })
   const operation = (async () => {
     // Availability cannot be aborted. createSummarizer checks the signal after
@@ -118,11 +122,12 @@ async function getClassifier() {
     throw new Error("Prompt API unavailable")
   }
   classifierPromise = (async () => {
-    const availability = await LanguageModel.availability()
+    const availability = await LanguageModel.availability(CLASSIFIER_LANGUAGE_OPTIONS)
     if (availability === "unavailable") {
       throw new Error("Prompt API unavailable on this device")
     }
     return LanguageModel.create({
+      ...CLASSIFIER_LANGUAGE_OPTIONS,
       initialPrompts: [{ role: "system", content: CLASSIFIER_SYSTEM_PROMPT }],
       monitor(m) {
         m.addEventListener("downloadprogress", (e) => {
@@ -182,6 +187,7 @@ async function classify({ text, title, url, projects, tags }) {
     session = await base.clone()
   } catch {
     session = await LanguageModel.create({
+      ...CLASSIFIER_LANGUAGE_OPTIONS,
       initialPrompts: [{ role: "system", content: CLASSIFIER_SYSTEM_PROMPT }],
     })
   }
@@ -227,9 +233,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.action === "summarize") {
     ;(async () => {
       try {
-        const isLab = msg.options != null
-        const summary = isLab
-          ? await summarizeLab(msg.text, msg.options)
+        const isolated = msg.options != null
+        const summary = isolated
+          ? await summarizeIsolated(msg.text, msg.options)
           : Lib.normalizeSummary(await (await getSummarizer()).summarize(msg.text))
         sendResponse({ ok: true, summary })
       } catch (err) {

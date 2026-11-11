@@ -213,6 +213,7 @@ document.addEventListener("DOMContentLoaded", () => {
     loadTabBtn.textContent = "Loading…"
     loadTabBtn.setAttribute("aria-busy", "true")
     chrome.runtime.sendMessage({ action: "labGetTabText" }, (resp) => {
+      const error = chrome.runtime.lastError?.message
       // An edit or a newer request owns the input now. Stale callbacks also
       // leave the newer request's loading indicator and status untouched.
       if (
@@ -222,8 +223,8 @@ document.addEventListener("DOMContentLoaded", () => {
       )
         return
       finishImport()
-      if (chrome.runtime.lastError) {
-        setStatusIfCurrent(request.statusRevision, chrome.runtime.lastError.message)
+      if (error) {
+        setStatusIfCurrent(request.statusRevision, error)
         return
       }
       if (!resp?.success) {
